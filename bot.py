@@ -295,11 +295,24 @@ async def finish(message: Message, state: FSMContext):
 
     bid = await add_booking(data)
 
-    await bot.send_message(
-        ADMIN_ID,
-        f"Заявка #{bid}\n{data['fio']}\n{group[1]} {group[2]}",
-        reply_markup=admin_kb(bid)
-    )
+   text = f"""
+Заявка #{bid}
+
+ФИО: {data['fio']}
+Телефон: {data['phone']}
+Возраст: {data['age']}
+
+Направление: {group[1]}
+Расписание: {group[2]}
+
+Username: @{message.from_user.username}
+"""
+
+await bot.send_message(
+    ADMIN_ID,
+    text,
+    reply_markup=admin_kb(bid)
+)
 
     await message.answer("Заявка отправлена 🙌")
     await state.clear()
