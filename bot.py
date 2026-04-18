@@ -295,7 +295,7 @@ async def finish(message: Message, state: FSMContext):
 
     bid = await add_booking(data)
 
-   text = f"""
+    text = f"""
 Заявка #{bid}
 
 ФИО: {data['fio']}
