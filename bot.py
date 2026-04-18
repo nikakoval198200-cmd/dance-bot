@@ -158,8 +158,19 @@ def admin_kb(bid):
 # --- START ---
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer("Выберите действие👇", reply_markup=main_menu())
+    text = """
+Добрый день🙌
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+Присоединяйтесь🎉
+https://vk.com/cosmos_dance_unity
 
+Меня зовут Алёна 😊
+Приглашаю вас к нам на занятия по танцам🙌
+
+Выберите действие👇
+"""
+    await message.answer(text, reply_markup=main_menu())
 
 # --- ABON ---
 @dp.callback_query(F.data == "abon")
