@@ -9,6 +9,11 @@ from db import *
 from states import BookingForm
 from keyboards import *
 
+import os
+
+TOKEN = os.getenv("8715454752:AAHkMyw_E_pSdSjmHI605KCdWnGhtG5cnlg")
+ADMIN_ID = int(os.getenv("5420031708"))
+
 TOKEN = "8715454752:AAHkMyw_E_pSdSjmHI605KCdWnGhtG5cnlg"
 ADMIN_ID = 5420031708
 
