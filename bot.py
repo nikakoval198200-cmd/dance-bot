@@ -308,14 +308,13 @@ async def finish(message: Message, state: FSMContext):
 Username: @{message.from_user.username}
 """
 
-     await bot.send_message(
+    await bot.send_message(
         ADMIN_ID,
         text,
         reply_markup=admin_kb(bid)
     )
 
     await message.answer("Заявка отправлена 🙌")
-
     await state.clear()
 
 # --- АДМИН ---
