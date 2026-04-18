@@ -12,8 +12,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 # --- CONFIG ---
-TOKEN = "ТВОЙ_ТОКЕН"
-ADMIN_ID = 123456789
+TOKEN = "8715454752:AAHkMyw_E_pSdSjmHI605KCdWnGhtG5cnlg"
+ADMIN_ID = 5420031708
 
 bot = Bot(TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
