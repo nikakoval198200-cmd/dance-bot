@@ -258,7 +258,7 @@ async def ok(call: CallbackQuery):
     booking = await get_booking(bid)
 
     await update_status(bid, "approved")
-    await bot.send_message(booking["user_id"], "✅ Вы записаны!")
+    await bot.send_message(booking["user_id"], "✅Поздравляем! Вы записаны!")
 
 
 # --- ADMIN DECLINE ---
@@ -268,7 +268,7 @@ async def no(call: CallbackQuery):
     booking = await get_booking(bid)
 
     await update_status(bid, "declined")
-    await bot.send_message(booking["user_id"], "❌ Отказ")
+    await bot.send_message(booking["user_id"], "❌ К сожалению, мы не можем подтвердить Вашу запись сейчас.")
 
 
 # --- RUN ---
