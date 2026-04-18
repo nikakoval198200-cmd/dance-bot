@@ -308,15 +308,15 @@ async def finish(message: Message, state: FSMContext):
 Username: @{message.from_user.username}
 """
 
-await bot.send_message(
-    ADMIN_ID,
-    text,
-    reply_markup=admin_kb(bid)
-)
+     await bot.send_message(
+        ADMIN_ID,
+        text,
+        reply_markup=admin_kb(bid)
+    )
 
     await message.answer("Заявка отправлена 🙌")
-    await state.clear()
 
+    await state.clear()
 
 # --- АДМИН ---
 @dp.callback_query(F.data.startswith("ok_"))
