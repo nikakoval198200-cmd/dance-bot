@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import asyncpg
@@ -38,14 +38,13 @@ async def init_db():
     pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with pool.acquire() as conn:
-        # группы с уникальностью
+        # таблицы
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS groups (
             id SERIAL PRIMARY KEY,
             name TEXT,
             schedule TEXT,
-            limit_count INT,
-            UNIQUE(name, schedule)
+            limit_count INT
         );
         """)
 
@@ -63,14 +62,19 @@ async def init_db():
         );
         """)
 
+        # 🔥 FIX: уникальность (решает ON CONFLICT проблему)
+        await conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS groups_unique_idx
+        ON groups(name, schedule);
+        """)
+
         # удаление дублей
         await conn.execute("""
-        DELETE FROM groups
-        WHERE id NOT IN (
-            SELECT MIN(id)
-            FROM groups
-            GROUP BY name, schedule
-        );
+        DELETE FROM groups a
+        USING groups b
+        WHERE a.id > b.id
+        AND a.name = b.name
+        AND a.schedule = b.schedule;
         """)
 
 
@@ -78,19 +82,15 @@ async def init_db():
 async def get_groups_by_direction(direction):
     async with pool.acquire() as conn:
         return await conn.fetch("""
-        SELECT DISTINCT ON (name, schedule) *
-        FROM groups
+        SELECT * FROM groups
         WHERE name ILIKE $1
-        ORDER BY name, schedule
+        ORDER BY id
         """, f"%{direction}%")
 
 
 async def get_group(group_id):
     async with pool.acquire() as conn:
-        return await conn.fetchrow(
-            "SELECT * FROM groups WHERE id=$1",
-            group_id
-        )
+        return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
 
 
 async def add_booking(data):
@@ -122,10 +122,7 @@ async def update_status(bid, status):
 
 async def get_booking(bid):
     async with pool.acquire() as conn:
-        return await conn.fetchrow(
-            "SELECT * FROM bookings WHERE id=$1",
-            bid
-        )
+        return await conn.fetchrow("SELECT * FROM bookings WHERE id=$1", bid)
 
 
 async def count_in_group(group_id):
@@ -172,7 +169,7 @@ def card_kb(group_id, index, total):
     ])
 
 
-# --- START ---
+# --- TEXT ---
 WELCOME_TEXT = """
 Добрый день🙌
 С вами на связи руководитель танцевальной команды Cosmos Dance Unity
@@ -185,6 +182,7 @@ https://t.me/starcosmoss
 """
 
 
+# --- START ---
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(WELCOME_TEXT, reply_markup=main_menu())
@@ -195,19 +193,14 @@ async def back_main(call: CallbackQuery):
     await call.message.answer(WELCOME_TEXT, reply_markup=main_menu())
 
 
-# --- ABON ---
 @dp.callback_query(F.data == "abon")
 async def abon(call: CallbackQuery):
     await call.message.answer("Напишите менеджеру @samorkata")
 
 
-# --- DIRECTIONS ---
 @dp.callback_query(F.data == "start")
 async def choose_direction(call: CallbackQuery):
-    await call.message.answer(
-        "Выберите направление:",
-        reply_markup=directions_kb()
-    )
+    await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
 
 # --- CACHE ---
@@ -250,7 +243,6 @@ async def show_groups(call: CallbackQuery):
     groups = await get_groups_by_direction(direction)
 
     user_cache[call.from_user.id] = groups
-
     await send_card(call, groups, 0)
 
 
@@ -258,7 +250,6 @@ async def show_groups(call: CallbackQuery):
 async def navigate(call: CallbackQuery):
     index = int(call.data.split("_")[1])
     groups = user_cache.get(call.from_user.id)
-
     await send_card(call, groups, index)
 
 
