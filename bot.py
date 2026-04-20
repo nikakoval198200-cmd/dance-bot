@@ -468,6 +468,9 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
+    # 👉 получаем группу
+    group = await get_group(booking["group_id"])
+
     style = booking["style"].lower()
 
     if "хип-хоп" in style or "фристайл" in style:
@@ -481,6 +484,7 @@ async def ok(call: CallbackQuery):
 ✅ <b>Вы записаны на занятие!</b>
 
 📌 Направление: {booking['style']}
+📅 Время: {group['schedule']}
 
 ❗️Что взять с собой:
 {outfit}
