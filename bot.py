@@ -37,9 +37,14 @@ class AdminAuth(StatesGroup):
 # --- TEXTS ---
 WELCOME_TEXT = """
 Добрый день🙌
-С вами Cosmos Dance Unity
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+Присоединяйтесь🎉
+https://vk.com/cosmos_dance_unity
 
-Выберите действие👇
+Меня зовут Алёна 😊
+Приглашаю вас к нам на занятия по танцам🙌
+Бот используются для записи на занятия.
 """
 
 SUB_TEXT = "💳 Абонементы уточняйте у администратора: @samorkata"
