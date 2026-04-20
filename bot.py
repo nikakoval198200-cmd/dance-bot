@@ -25,6 +25,11 @@ MSK = ZoneInfo("Europe/Moscow")
 
 user_cache = {}
 
+class AddGroup(StatesGroup):
+    name = State()
+    schedule = State()
+    limit = State()
+
 
 # --- FSM ---
 class BookingForm(StatesGroup):
@@ -192,7 +197,8 @@ def admin_kb(bid):
     ])
 def admin_panel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Заполненность групп", callback_data="admin_stats")]
+        [InlineKeyboardButton(text="📊 Заполненность групп", callback_data="admin_stats")],
+        [InlineKeyboardButton(text="➕ Добавить группу", callback_data="add_group")]
     ])
 
 # --- TEXT ---
@@ -217,6 +223,46 @@ async def start(message: Message):
 async def admin_panel(message: Message):
     if message.from_user.id == ADMIN_ID:
         await message.answer("Админ-панель:", reply_markup=admin_panel_kb())
+
+@dp.callback_query(F.data == "add_group")
+async def add_group_start(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    await call.message.answer("Введите название группы:")
+    await state.set_state(AddGroup.name)
+
+@dp.message(AddGroup.name)
+async def add_group_name(message: Message, state: FSMContext):
+    await state.update_data(name=message.text)
+    await message.answer("Введите расписание (например: Пн 18:00-19:00):")
+    await state.set_state(AddGroup.schedule)
+
+@dp.message(AddGroup.schedule)
+async def add_group_schedule(message: Message, state: FSMContext):
+    await state.update_data(schedule=message.text)
+    await message.answer("Введите лимит мест:")
+    await state.set_state(AddGroup.limit)
+
+@dp.message(AddGroup.limit)
+async def add_group_limit(message: Message, state: FSMContext):
+    data = await state.get_data()
+
+    try:
+        limit = int(message.text)
+    except:
+        await message.answer("❌ Введите число")
+        return
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        INSERT INTO groups (name, schedule, limit_count)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (name, schedule) DO NOTHING
+        """, data["name"], data["schedule"], limit)
+
+    await message.answer("✅ Группа добавлена")
+    await state.clear()
 
 
 @dp.callback_query(F.data == "back_main")
