@@ -42,7 +42,7 @@ WELCOME_TEXT = """
 Выберите действие👇
 """
 
-SUB_TEXT = "💳 Абонементы уточняйте у администратора" samorkata."
+SUB_TEXT = "💳 Абонементы уточняйте у администратора: @samorkata."
 
 # --- DB INIT ---
 async def init_db():
