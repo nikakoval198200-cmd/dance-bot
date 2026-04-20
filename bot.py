@@ -312,11 +312,11 @@ async def select(call: CallbackQuery, state: FSMContext):
     await state.set_state(BookingForm.fio)
 
 
-@dp.message(BookingForm.fio)
-async def fio(m: Message, s: FSMContext):
-    await s.update_data(fio=m.text)
-    await m.answer("Телефон:")
-    await s.set_state(BookingForm.phone)
+@dp.message(StateFilter(BookingForm.phone))
+async def phone(m: Message, s: FSMContext):
+    await s.update_data(phone=m.text)
+    await m.answer("Возраст:")
+    await s.set_state(BookingForm.age)
 
 
 @dp.message(BookingForm.phone)
@@ -326,7 +326,7 @@ async def phone(m: Message, s: FSMContext):
     await s.set_state(BookingForm.age)
 
 
-@dp.message(BookingForm.age)
+@dp.message(StateFilter(BookingForm.age))
 async def finish(m: Message, s: FSMContext):
     data = await s.get_data()
     group = await get_group(data["group_id"])
