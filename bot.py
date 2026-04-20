@@ -327,7 +327,7 @@ async def phone(m: Message, s: FSMContext):
     await s.set_state(BookingForm.age)
 
 
-@dp.message(StateFilter(BookingForm.age))
+@dp.message(BookingForm.age)
 async def finish(m: Message, s: FSMContext):
     data = await s.get_data()
     group = await get_group(data["group_id"])
