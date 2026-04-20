@@ -187,42 +187,6 @@ async def subs(call: CallbackQuery):
 async def choose(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
-# --- ADMIN ---
-@dp.message(Command("admin"))
-async def admin_cmd(message: Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await message.answer("Введите пароль:")
-    await state.set_state(AdminAuth.password)
-
-@dp.message(AdminAuth.password)
-async def check_pass(message: Message, state: FSMContext):
-    if message.text == ADMIN_PASSWORD:
-        await message.answer("✅ Админ-панель", reply_markup=admin_panel_kb())
-    else:
-        await message.answer("❌ Неверный пароль")
-    await state.clear()
-
-@dp.callback_query(F.data == "stats")
-async def stats(call: CallbackQuery):
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-        SELECT g.name, g.schedule, g.limit_count,
-        COUNT(b.id) FILTER (WHERE b.status='approved') as used
-        FROM groups g
-        LEFT JOIN bookings b ON g.id=b.group_id
-        GROUP BY g.id
-        ORDER BY g.name
-        """)
-
-    text = "📊 Группы:\n\n"
-    for r in rows:
-        free = r["limit_count"] - r["used"]
-        text += f"{r['name']} | {r['schedule']}\n"
-        text += f"{r['used']}/{r['limit_count']} (свободно {free})\n\n"
-
-    await call.message.answer(text)
-
 # --- GROUPS ---
 async def send_card(call, groups, index):
     if not groups:
@@ -274,20 +238,30 @@ async def select(call: CallbackQuery, state: FSMContext):
     await call.message.answer("ФИО:")
     await state.set_state(BookingForm.fio)
 
-@dp.message(BookingForm.fio)
+@dp.message(F.text, BookingForm.fio)
 async def fio(m: Message, s: FSMContext):
+    if not m.text:
+        await m.answer("Введите ФИО текстом 🙏")
+        return
     await s.update_data(fio=m.text)
     await m.answer("Телефон:")
     await s.set_state(BookingForm.phone)
 
-@dp.message(BookingForm.phone)
+@dp.message(F.text, BookingForm.phone)
 async def phone(m: Message, s: FSMContext):
+    if not m.text:
+        await m.answer("Введите телефон текстом 🙏")
+        return
     await s.update_data(phone=m.text)
     await m.answer("Возраст:")
     await s.set_state(BookingForm.age)
 
-@dp.message(BookingForm.age)
+@dp.message(F.text, BookingForm.age)
 async def finish(m: Message, s: FSMContext):
+    if not m.text:
+        await m.answer("Введите возраст текстом 🙏")
+        return
+
     data = await s.get_data()
     group = await get_group(data["group_id"])
 
@@ -300,8 +274,8 @@ async def finish(m: Message, s: FSMContext):
     bid = await add_booking(data)
 
     await bot.send_message(
-    ADMIN_ID,
-    f"""📌 <b>Новая заявка #{bid}</b>
+        ADMIN_ID,
+        f"""📌 <b>Новая заявка #{bid}</b>
 
 👤 ФИО: {data['fio']}
 📞 Телефон: {data['phone']}
@@ -310,75 +284,16 @@ async def finish(m: Message, s: FSMContext):
 💃 Направление: {group['name']}
 📅 Расписание: {group['schedule']}
 """,
-    reply_markup=admin_kb(bid),
-    parse_mode="HTML"
-)
+        reply_markup=admin_kb(bid),
+        parse_mode="HTML"
+    )
+
     await m.answer("Заявка отправлена 🙌")
     await s.clear()
-
-# --- ADMIN ACTIONS ---
-@dp.callback_query(F.data.startswith("ok_"))
-async def ok(call: CallbackQuery):
-    bid = int(call.data.split("_")[1])
-    booking = await get_booking(bid)
-
-    await update_status(bid, "approved")
-
-    await bot.send_message(booking["user_id"], "✅ Вы записаны!")
-
-    if "Контемпорари" in booking["style"] or "Акробатика" in booking["style"]:
-        pack = "Обтягивающая одежда + носочки"
-    else:
-        pack = "Спортивная форма + кроссовки"
-
-    await bot.send_message(booking["user_id"], f"📌 С собой: {pack}")
-    await bot.send_message(booking["user_id"], REVIEW_TEXT)
-
-@dp.callback_query(F.data.startswith("no_"))
-async def no(call: CallbackQuery):
-    bid = int(call.data.split("_")[1])
-    booking = await get_booking(bid)
-
-    await update_status(bid, "declined")
-    await bot.send_message(booking["user_id"], "❌ Запись отклонена")
 
 # --- RUN ---
 async def main():
     await init_db()
-
-    async with pool.acquire() as conn:
-        await conn.execute("""
-        INSERT INTO groups (name, schedule, limit_count) VALUES
-
-        ('Хип-хоп дети 6-8', 'Ср 17:00-18:00', 20),
-        ('Хип-хоп дети 6-8', 'Пт 17:00-18:00', 20),
-
-        ('Хип-хоп дети 7-9', 'Пн 17:00-18:30', 20),
-        ('Хип-хоп дети 7-9', 'Чт 17:00-18:30', 20),
-
-        ('Хип-хоп дети 9-11', 'Пн 18:30-20:00', 20),
-        ('Хип-хоп дети 9-11', 'Чт 18:30-20:00', 20),
-
-        ('Хип-хоп дети 10-14', 'Ср 18:00-20:00', 20),
-        ('Хип-хоп дети 10-14', 'Пт 18:00-20:00', 20),
-
-        ('Хип-хоп взрослые', 'Ср 17:00-18:00', 20),
-        ('Хип-хоп взрослые', 'Пт 19:00-20:00', 20),
-
-        ('Контемпорари', 'Вт 20:00-21:00', 20),
-        ('Контемпорари', 'Сб 11:00-12:00', 20),
-
-        ('Гёрли хип-хоп', 'Пн 19:00-20:00', 20),
-        ('Гёрли хип-хоп', 'Чт 20:00-21:00', 20),
-
-        ('Акробатика 5-7', 'Сб 10:45-11:45', 20),
-        ('Акробатика 7-12', 'Сб 12:00-13:00', 20),
-
-        ('Фристайл', 'Пт 16:00-17:00', 20)
-
-        ON CONFLICT DO NOTHING;
-        """)
-
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
