@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import asyncpg
@@ -24,6 +23,8 @@ dp = Dispatcher(storage=MemoryStorage())
 pool = None
 MSK = ZoneInfo("Europe/Moscow")
 
+user_cache = {}
+
 
 # --- FSM ---
 class BookingForm(StatesGroup):
@@ -32,13 +33,13 @@ class BookingForm(StatesGroup):
     age = State()
 
 
-# --- DB INIT ---
+# --- INIT DB ---
 async def init_db():
     global pool
     pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with pool.acquire() as conn:
-        # таблицы
+
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS groups (
             id SERIAL PRIMARY KEY,
@@ -62,23 +63,14 @@ async def init_db():
         );
         """)
 
-        # 🔥 FIX: уникальность (решает ON CONFLICT проблему)
+        # фикс ON CONFLICT
         await conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS groups_unique_idx
         ON groups(name, schedule);
         """)
 
-        # удаление дублей
-        await conn.execute("""
-        DELETE FROM groups a
-        USING groups b
-        WHERE a.id > b.id
-        AND a.name = b.name
-        AND a.schedule = b.schedule;
-        """)
 
-
-# --- DB FUNCTIONS ---
+# --- DB ---
 async def get_groups_by_direction(direction):
     async with pool.acquire() as conn:
         return await conn.fetch("""
@@ -90,7 +82,10 @@ async def get_groups_by_direction(direction):
 
 async def get_group(group_id):
     async with pool.acquire() as conn:
-        return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
+        return await conn.fetchrow(
+            "SELECT * FROM groups WHERE id=$1",
+            group_id
+        )
 
 
 async def add_booking(data):
@@ -115,14 +110,16 @@ async def update_status(bid, status):
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE bookings SET status=$1 WHERE id=$2",
-            status,
-            bid
+            status, bid
         )
 
 
 async def get_booking(bid):
     async with pool.acquire() as conn:
-        return await conn.fetchrow("SELECT * FROM bookings WHERE id=$1", bid)
+        return await conn.fetchrow(
+            "SELECT * FROM bookings WHERE id=$1",
+            bid
+        )
 
 
 async def count_in_group(group_id):
@@ -132,7 +129,7 @@ async def count_in_group(group_id):
         WHERE group_id=$1 AND status='approved'
         """, group_id)
 
-        return row["count"]
+        return int(row["count"])
 
 
 # --- KEYBOARDS ---
@@ -163,9 +160,24 @@ def card_kb(group_id, index, total):
     if index < total - 1:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
 
+    keyboard = []
+
+    if nav:
+        keyboard.append(nav)
+
+    keyboard.append([
+        InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{group_id}")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def admin_kb(bid):
     return InlineKeyboardMarkup(inline_keyboard=[
-        nav if nav else [],
-        [InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{group_id}")]
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"ok_{bid}"),
+            InlineKeyboardButton(text="❌ Отказать", callback_data=f"no_{bid}")
+        ]
     ])
 
 
@@ -203,12 +215,12 @@ async def choose_direction(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
 
-# --- CACHE ---
-user_cache = {}
-
-
 # --- CARD ---
 async def send_card(call, groups, index):
+    if not groups:
+        await call.message.answer("❌ Нет доступных занятий")
+        return
+
     g = groups[index]
 
     busy = await count_in_group(g["id"])
@@ -228,6 +240,7 @@ async def send_card(call, groups, index):
     )
 
 
+# --- DIR ---
 @dp.callback_query(F.data.startswith("dir_"))
 async def show_groups(call: CallbackQuery):
     mapping = {
@@ -249,7 +262,12 @@ async def show_groups(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("nav_"))
 async def navigate(call: CallbackQuery):
     index = int(call.data.split("_")[1])
-    groups = user_cache.get(call.from_user.id)
+    groups = user_cache.get(call.from_user.id, [])
+
+    if not groups:
+        await call.message.answer("❌ Данные устарели, выберите направление заново")
+        return
+
     await send_card(call, groups, index)
 
 
@@ -257,6 +275,7 @@ async def navigate(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("group_"))
 async def select_group(call: CallbackQuery, state: FSMContext):
     gid = int(call.data.split("_")[1])
+
     await state.update_data(group_id=gid)
 
     await call.message.answer("Введите ФИО:")
@@ -292,7 +311,7 @@ async def finish(message: Message, state: FSMContext):
     username = message.from_user.username or "нет username"
 
     text = f"""
-Заявка #{bid}
+📌 ЗАЯВКА #{bid}
 
 ФИО: {data['fio']}
 Телефон: {data['phone']}
@@ -304,9 +323,33 @@ async def finish(message: Message, state: FSMContext):
 Username: @{username}
 """
 
-    await bot.send_message(ADMIN_ID, text)
+    await bot.send_message(
+        ADMIN_ID,
+        text,
+        reply_markup=admin_kb(bid)
+    )
+
     await message.answer("Заявка отправлена 🙌")
     await state.clear()
+
+
+# --- ADMIN ---
+@dp.callback_query(F.data.startswith("ok_"))
+async def ok(call: CallbackQuery):
+    bid = int(call.data.split("_")[1])
+    booking = await get_booking(bid)
+
+    await update_status(bid, "approved")
+    await bot.send_message(booking["user_id"], "✅ Вы записаны!")
+
+
+@dp.callback_query(F.data.startswith("no_"))
+async def no(call: CallbackQuery):
+    bid = int(call.data.split("_")[1])
+    booking = await get_booking(bid)
+
+    await update_status(bid, "declined")
+    await bot.send_message(booking["user_id"], "❌ Запись отклонена")
 
 
 # --- RUN ---
