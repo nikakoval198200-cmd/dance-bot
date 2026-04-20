@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import asyncpg
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
@@ -21,8 +21,22 @@ bot = Bot(TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 pool = None
 
-MSK = ZoneInfo("Europe/Moscow")
 user_cache = {}
+
+# --- TEXT ---
+WELCOME_TEXT = """
+Добрый день🙌
+
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+
+Меня зовут Алёна 😊  
+Приглашаю вас на занятия 🙌
+
+Выберите действие👇
+"""
+
+SUB_TEXT = "💳 Абонементы уточняйте у администратора: @samorkata"
 
 REVIEW_TEXT = """
 💬 Спасибо за посещение! Будем очень рады вашему отзыву 🙏
@@ -127,7 +141,8 @@ async def count_in_group(group_id):
 # --- KEYBOARDS ---
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Записаться", callback_data="start")]
+        [InlineKeyboardButton(text="📝 Записаться", callback_data="start")],
+        [InlineKeyboardButton(text="💳 Абонементы", callback_data="subs")]
     ])
 
 
@@ -159,13 +174,24 @@ def card_kb(group_id, index, total):
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+def admin_kb(bid):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"ok_{bid}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"no_{bid}")
+        ]
+    ])
+
+
 # --- START ---
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer(
-        "Добро пожаловать 🙌\nВыберите действие:",
-        reply_markup=main_menu()
-    )
+    await message.answer(WELCOME_TEXT, reply_markup=main_menu())
+
+
+@dp.callback_query(F.data == "subs")
+async def subs(call: CallbackQuery):
+    await call.message.answer(SUB_TEXT)
 
 
 @dp.callback_query(F.data == "start")
@@ -173,7 +199,7 @@ async def choose(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
 
-# --- CARD ---
+# --- GROUPS ---
 async def send_card(call, groups, index):
     if not groups:
         await call.message.answer("Нет занятий")
@@ -220,7 +246,7 @@ async def nav(call: CallbackQuery):
     await send_card(call, groups, idx)
 
 
-# --- BOOKING FLOW ---
+# --- BOOKING ---
 @dp.callback_query(F.data.startswith("group_"))
 async def select(call: CallbackQuery, state: FSMContext):
     await state.update_data(group_id=int(call.data.split("_")[1]))
@@ -266,6 +292,7 @@ async def finish(m: Message, s: FSMContext):
 💃 {group['name']}
 📅 {group['schedule']}
 """,
+        reply_markup=admin_kb(bid)
     )
 
     await m.answer("Заявка отправлена 🙌")
@@ -273,12 +300,6 @@ async def finish(m: Message, s: FSMContext):
 
 
 # --- ADMIN ---
-@dp.message(Command("admin"))
-async def admin(m: Message):
-    if m.from_user.id == ADMIN_ID:
-        await m.answer("Админ доступ открыт")
-
-
 @dp.callback_query(F.data.startswith("ok_"))
 async def ok(call: CallbackQuery):
     bid = int(call.data.split("_")[1])
@@ -314,7 +335,8 @@ async def main():
 
     async with pool.acquire() as conn:
         await conn.execute("""
-        INSERT INTO groups (name, schedule, limit_count) VALUES
+        INSERT INTO groups (name, schedule, limit_count)
+        VALUES
         ('Хип-хоп дети 6-8', 'Ср 17:00-18:00', 20),
         ('Хип-хоп дети 6-8', 'Пт 17:00-18:00', 20),
         ('Хип-хоп дети 7-9', 'Пн 17:00-18:30', 20),
