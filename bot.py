@@ -80,15 +80,45 @@ async def init_db():
         """)
 
 
+# --- HELP: PARSE SCHEDULE ---
+def parse_schedule(schedule_text: str):
+    """
+    Пример:
+    'Пн 17:00-18:00'
+    """
+    days_map = {
+        "Пн": 0,
+        "Вт": 1,
+        "Ср": 2,
+        "Чт": 3,
+        "Пт": 4,
+        "Сб": 5,
+        "Вс": 6
+    }
+
+    day, time = schedule_text.split()
+    start_time = time.split("-")[0]
+
+    hour, minute = map(int, start_time.split(":"))
+
+    return days_map[day], hour, minute
+
+
+def get_next_event_datetime(day, hour, minute):
+    now = datetime.now(MSK)
+
+    days_ahead = (day - now.weekday() + 7) % 7
+    if days_ahead == 0 and now.hour > hour:
+        days_ahead = 7
+
+    event = now + timedelta(days=days_ahead)
+    return event.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
 # --- DB ---
 async def get_group(group_id):
     async with pool.acquire() as conn:
         return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
-
-
-async def get_groups():
-    async with pool.acquire() as conn:
-        return await conn.fetch("SELECT * FROM groups")
 
 
 async def add_booking(data):
@@ -122,79 +152,117 @@ async def get_booking(bid):
         return await conn.fetchrow("SELECT * FROM bookings WHERE id=$1", bid)
 
 
-async def count_in_group(group_id):
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-        SELECT COUNT(*) FROM bookings
-        WHERE group_id=$1 AND status='approved'
-        """, group_id)
-        return row["count"]
-
-
 # --- KEYBOARDS ---
-def admin_menu():
+def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="📦 Группы", callback_data="admin_groups")],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_refresh")]
+        [InlineKeyboardButton(text="📝 Записаться", callback_data="start")]
     ])
 
 
 # --- START ---
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer("Добрый день 🙌")
+    await message.answer("Добрый день 🙌", reply_markup=main_menu())
 
 
-# --- ADMIN ENTRY ---
-@dp.message(F.text == "/admin")
-async def admin(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await message.answer("🧑‍💼 Админ-панель", reply_markup=admin_menu())
+# --- BOOKING FINISH ---
+@dp.message(BookingForm.age)
+async def finish(message: Message, state: FSMContext):
+    data = await state.get_data()
+    group = await get_group(data["group_id"])
+
+    data.update({
+        "age": message.text,
+        "style": group["name"],
+        "user_id": message.from_user.id
+    })
+
+    bid = await add_booking(data)
+
+    await bot.send_message(ADMIN_ID, f"Новая заявка #{bid}")
+
+    await message.answer("Заявка отправлена 🙌")
+    await state.clear()
 
 
-# --- ADMIN STATS ---
-@dp.callback_query(F.data == "admin_stats")
-async def admin_stats(call: CallbackQuery):
-    groups = await get_groups()
+# --- APPROVE ---
+@dp.callback_query(F.data.startswith("ok_"))
+async def approve(call: CallbackQuery):
+    bid = int(call.data.split("_")[1])
+    booking = await get_booking(bid)
+    group = await get_group(booking["group_id"])
 
-    text = "📊 ЗАГРУЗКА ГРУПП:\n\n"
+    await update_status(bid, "approved")
 
-    for g in groups:
-        busy = await count_in_group(g["id"])
-        free = g["limit_count"] - busy
+    day, hour, minute = parse_schedule(group["schedule"])
+    event_time = get_next_event_datetime(day, hour, minute)
 
-        text += (
-            f"🟣 {g['name']}\n"
-            f"📅 {g['schedule']}\n"
-            f"👥 {busy}/{g['limit_count']} (свободно {free})\n\n"
-        )
+    # экипировка
+    if "Контемпорари" in group["name"] or "Акробатика" in group["name"]:
+        gear = "Обтягивающая одежда и носочки"
+    else:
+        gear = "Спортивная одежда и кроссовки"
 
-    await call.message.edit_text(text, reply_markup=admin_menu())
+    await bot.send_message(
+        booking["user_id"],
+        f"""✅ Вы записаны!
+
+🎒 Что взять:
+{gear}
+
+⏰ Напоминания будут автоматически перед занятием
+"""
+    )
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        INSERT INTO reminders (booking_id, event_time)
+        VALUES ($1,$2)
+        """, bid, event_time)
+
+    await call.answer()
 
 
-# --- GROUP LIST ---
-@dp.callback_query(F.data == "admin_groups")
-async def admin_groups(call: CallbackQuery):
-    groups = await get_groups()
+# --- BACKGROUND TASK (IDEAL REMINDERS) ---
+async def reminder_worker():
+    while True:
+        now = datetime.now(MSK)
 
-    text = "📦 СПИСОК ГРУПП:\n\n"
-    for g in groups:
-        text += f"• {g['name']} — {g['schedule']}\n"
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT r.*, b.user_id
+                FROM reminders r
+                JOIN bookings b ON b.id = r.booking_id
+            """)
 
-    await call.message.edit_text(text, reply_markup=admin_menu())
+        for r in rows:
+            event = r["event_time"]
 
+            # 24h
+            if not r["remind_24h"] and now >= event - timedelta(hours=24):
+                await bot.send_message(r["user_id"], "⏰ Завтра занятие!")
+                await pool.execute("UPDATE reminders SET remind_24h=TRUE WHERE id=$1", r["id"])
 
-# --- REFRESH ---
-@dp.callback_query(F.data == "admin_refresh")
-async def refresh(call: CallbackQuery):
-    await admin_stats(call)
+            # 2h
+            if not r["remind_2h"] and now >= event - timedelta(hours=2):
+                await bot.send_message(r["user_id"], "⏰ Через 2 часа занятие!")
+                await pool.execute("UPDATE reminders SET remind_2h=TRUE WHERE id=$1", r["id"])
+
+            # review
+            if not r["review_sent"] and now >= event + timedelta(hours=1):
+                await bot.send_message(
+                    r["user_id"],
+                    f"⭐ Спасибо за занятие! Оставьте отзыв: {REVIEW_LINK}"
+                )
+                await pool.execute("UPDATE reminders SET review_sent=TRUE WHERE id=$1", r["id"])
+
+        await asyncio.sleep(60)
 
 
 # --- RUN ---
 async def main():
     await init_db()
+    asyncio.create_task(reminder_worker())
     await dp.start_polling(bot)
 
 
