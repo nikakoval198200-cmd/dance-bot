@@ -33,7 +33,29 @@ class BookingForm(StatesGroup):
     age = State()
 
 
-# --- INIT DB ---
+# --- TEXTS ---
+WELCOME_TEXT = """
+Добрый день🙌
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+
+Меня зовут Алёна 😊
+Приглашаю вас на занятия 🙌
+
+Выберите действие👇
+"""
+
+
+REVIEW_TEXT = """
+💬 Спасибо, что были на занятии!
+
+Будем очень благодарны, если оставите отзыв 🙏
+
+👉 https://yandex.ru/profile/107007337379?intent=reviews
+"""
+
+
+# --- DB INIT ---
 async def init_db():
     global pool
     pool = await asyncpg.create_pool(DATABASE_URL)
@@ -63,7 +85,6 @@ async def init_db():
         );
         """)
 
-        # фикс ON CONFLICT
         await conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS groups_unique_idx
         ON groups(name, schedule);
@@ -82,10 +103,7 @@ async def get_groups_by_direction(direction):
 
 async def get_group(group_id):
     async with pool.acquire() as conn:
-        return await conn.fetchrow(
-            "SELECT * FROM groups WHERE id=$1",
-            group_id
-        )
+        return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
 
 
 async def add_booking(data):
@@ -116,10 +134,7 @@ async def update_status(bid, status):
 
 async def get_booking(bid):
     async with pool.acquire() as conn:
-        return await conn.fetchrow(
-            "SELECT * FROM bookings WHERE id=$1",
-            bid
-        )
+        return await conn.fetchrow("SELECT * FROM bookings WHERE id=$1", bid)
 
 
 async def count_in_group(group_id):
@@ -128,7 +143,6 @@ async def count_in_group(group_id):
         SELECT COUNT(*) FROM bookings
         WHERE group_id=$1 AND status='approved'
         """, group_id)
-
         return int(row["count"])
 
 
@@ -136,18 +150,18 @@ async def count_in_group(group_id):
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Записаться", callback_data="start")],
-        [InlineKeyboardButton(text="💳 Абонементы", callback_data="abon")]
+        [InlineKeyboardButton(text="📊 Админ панель", callback_data="admin_panel")],
     ])
 
 
 def directions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Хип-хоп дети 6-14", callback_data="dir_kids")],
+        [InlineKeyboardButton(text="Хип-хоп дети", callback_data="dir_kids")],
         [InlineKeyboardButton(text="Хип-хоп взрослые", callback_data="dir_adult")],
         [InlineKeyboardButton(text="Гёрли хип-хоп", callback_data="dir_girly")],
-        [InlineKeyboardButton(text="Контемпорари 7-12", callback_data="dir_contempo")],
-        [InlineKeyboardButton(text="Акробатика 5-12", callback_data="dir_acro")],
-        [InlineKeyboardButton(text="Фристайл 6+", callback_data="dir_freestyle")],
+        [InlineKeyboardButton(text="Контемпорари", callback_data="dir_contempo")],
+        [InlineKeyboardButton(text="Акробатика", callback_data="dir_acro")],
+        [InlineKeyboardButton(text="Фристайл", callback_data="dir_freestyle")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
@@ -160,38 +174,31 @@ def card_kb(group_id, index, total):
     if index < total - 1:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
 
-    keyboard = []
-
+    kb = []
     if nav:
-        keyboard.append(nav)
+        kb.append(nav)
 
-    keyboard.append([
+    kb.append([
         InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{group_id}")
     ])
 
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def admin_kb(bid):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ Одобрить", callback_data=f"ok_{bid}"),
-            InlineKeyboardButton(text="❌ Отказать", callback_data=f"no_{bid}")
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"no_{bid}")
         ]
     ])
 
 
-# --- TEXT ---
-WELCOME_TEXT = """
-Добрый день🙌
-С вами на связи руководитель танцевальной команды Cosmos Dance Unity
-https://t.me/starcosmoss
-
-Меня зовут Алёна 😊
-Приглашаю вас на занятия 🙌
-
-Выберите действие👇
-"""
+def admin_panel_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статистика групп", callback_data="stats")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+    ])
 
 
 # --- START ---
@@ -205,24 +212,48 @@ async def back_main(call: CallbackQuery):
     await call.message.answer(WELCOME_TEXT, reply_markup=main_menu())
 
 
-@dp.callback_query(F.data == "abon")
-async def abon(call: CallbackQuery):
-    await call.message.answer("Напишите менеджеру @samorkata")
-
-
 @dp.callback_query(F.data == "start")
 async def choose_direction(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
 
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        return
+    await call.message.answer("📊 Админ панель", reply_markup=admin_panel_kb())
+
+
+# --- STATS ---
+@dp.callback_query(F.data == "stats")
+async def stats(call: CallbackQuery):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+        SELECT g.name, g.schedule, g.limit_count,
+        COUNT(b.id) FILTER (WHERE b.status='approved') as used
+        FROM groups g
+        LEFT JOIN bookings b ON g.id=b.group_id
+        GROUP BY g.id
+        ORDER BY g.name;
+        """)
+
+    text = "📊 <b>Заполненность групп</b>\n\n"
+
+    for r in rows:
+        free = r["limit_count"] - r["used"]
+        text += f"{r['name']} | {r['schedule']}\n"
+        text += f"👥 {r['used']}/{r['limit_count']} (свободно {free})\n\n"
+
+    await call.message.answer(text, parse_mode="HTML")
+
+
 # --- CARD ---
 async def send_card(call, groups, index):
     if not groups:
-        await call.message.answer("❌ Нет доступных занятий")
+        await call.message.answer("❌ Нет занятий")
         return
 
     g = groups[index]
-
     busy = await count_in_group(g["id"])
     free = g["limit_count"] - busy
 
@@ -240,7 +271,6 @@ async def send_card(call, groups, index):
     )
 
 
-# --- DIR ---
 @dp.callback_query(F.data.startswith("dir_"))
 async def show_groups(call: CallbackQuery):
     mapping = {
@@ -263,11 +293,6 @@ async def show_groups(call: CallbackQuery):
 async def navigate(call: CallbackQuery):
     index = int(call.data.split("_")[1])
     groups = user_cache.get(call.from_user.id, [])
-
-    if not groups:
-        await call.message.answer("❌ Данные устарели, выберите направление заново")
-        return
-
     await send_card(call, groups, index)
 
 
@@ -275,7 +300,6 @@ async def navigate(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("group_"))
 async def select_group(call: CallbackQuery, state: FSMContext):
     gid = int(call.data.split("_")[1])
-
     await state.update_data(group_id=gid)
 
     await call.message.answer("Введите ФИО:")
@@ -308,24 +332,10 @@ async def finish(message: Message, state: FSMContext):
     })
 
     bid = await add_booking(data)
-    username = message.from_user.username or "нет username"
-
-    text = f"""
-📌 ЗАЯВКА #{bid}
-
-ФИО: {data['fio']}
-Телефон: {data['phone']}
-Возраст: {data['age']}
-
-Направление: {group['name']}
-Расписание: {group['schedule']}
-
-Username: @{username}
-"""
 
     await bot.send_message(
         ADMIN_ID,
-        text,
+        f"📌 Заявка #{bid}\n{data['fio']}\n{data['phone']}\n{group['name']}",
         reply_markup=admin_kb(bid)
     )
 
@@ -333,16 +343,33 @@ Username: @{username}
     await state.clear()
 
 
-# --- ADMIN ---
+# --- ADMIN APPROVE ---
 @dp.callback_query(F.data.startswith("ok_"))
 async def ok(call: CallbackQuery):
     bid = int(call.data.split("_")[1])
     booking = await get_booking(bid)
 
     await update_status(bid, "approved")
-    await bot.send_message(booking["user_id"], "✅ Вы записаны!")
+
+    # 1) подтверждение
+    await bot.send_message(
+        booking["user_id"],
+        "✅ Вы записаны!"
+    )
+
+    # 2) что взять с собой
+    if "Контемпорари" in booking["style"] or "Акробатика" in booking["style"]:
+        pack = "👕 Обтягивающая одежда + чистые носочки"
+    else:
+        pack = "👕 Спортивная одежда + кроссовки"
+
+    await bot.send_message(
+        booking["user_id"],
+        f"📌 Что взять с собой:\n{pack}"
+    )
 
 
+# --- ADMIN DECLINE ---
 @dp.callback_query(F.data.startswith("no_"))
 async def no(call: CallbackQuery):
     bid = int(call.data.split("_")[1])
