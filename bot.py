@@ -31,7 +31,18 @@ class BookingForm(StatesGroup):
     fio = State()
     phone = State()
     age = State()
+    
+REVIEW_TEXT = """
+💜 Спасибо, что были на тренировке!
 
+Нам очень важна ваша обратная связь 🙏  
+Она помогает нам становиться лучше для вас
+
+Будем благодарны, если оставите отзыв по ссылке👇  
+https://yandex.ru/profile/107007337379?intent=reviews
+
+Это займет всего 1 минуту, но сильно поможет нашей команде 💫
+"""
 
 # --- INIT DB ---
 async def init_db():
@@ -179,7 +190,10 @@ def admin_kb(bid):
             InlineKeyboardButton(text="❌ Отказать", callback_data=f"no_{bid}")
         ]
     ])
-
+def admin_panel_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Заполненность групп", callback_data="admin_stats")]
+    ])
 
 # --- TEXT ---
 WELCOME_TEXT = """
@@ -198,6 +212,11 @@ https://t.me/starcosmoss
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(WELCOME_TEXT, reply_markup=main_menu())
+
+@dp.message(F.text == "/admin")
+async def admin_panel(message: Message):
+    if message.from_user.id == ADMIN_ID:
+        await message.answer("Админ-панель:", reply_markup=admin_panel_kb())
 
 
 @dp.callback_query(F.data == "back_main")
@@ -239,6 +258,28 @@ async def send_card(call, groups, index):
         parse_mode="HTML"
     )
 
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    async with pool.acquire() as conn:
+        groups = await conn.fetch("SELECT * FROM groups ORDER BY id")
+
+    text = "📊 <b>Заполненность групп:</b>\n\n"
+
+    for g in groups:
+        busy = await count_in_group(g["id"])
+        free = g["limit_count"] - busy
+
+        text += f"""
+🟣 <b>{g['name']}</b>
+📅 {g['schedule']}
+👥 {busy}/{g['limit_count']} (свободно {free})
+
+"""
+
+    await call.message.answer(text, parse_mode="HTML")
 
 # --- DIR ---
 @dp.callback_query(F.data.startswith("dir_"))
@@ -340,7 +381,32 @@ async def ok(call: CallbackQuery):
     booking = await get_booking(bid)
 
     await update_status(bid, "approved")
-    await bot.send_message(booking["user_id"], "✅ Вы записаны!")
+
+    style = booking["style"].lower()
+
+    if "хип-хоп" in style or "фристайл" in style:
+        outfit = "👕 Спортивная одежда и кроссовки"
+    elif "контемпорари" in style or "акробатика" in style:
+        outfit = "🤸 Обтягивающая одежда и чистые носочки"
+    else:
+        outfit = "👕 Удобная одежда"
+
+    text = f"""
+✅ <b>Вы записаны на занятие!</b>
+
+📌 Направление: {booking['style']}
+
+❗️Что взять с собой:
+{outfit}
+
+До встречи на тренировке 🙌
+"""
+
+    await bot.send_message(
+        booking["user_id"],
+        text,
+        parse_mode="HTML"
+    )
 
 
 @dp.callback_query(F.data.startswith("no_"))
