@@ -1,6 +1,5 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import asyncpg
@@ -24,9 +23,7 @@ dp = Dispatcher(storage=MemoryStorage())
 pool = None
 MSK = ZoneInfo("Europe/Moscow")
 
-
-# --- LINKS ---
-REVIEW_LINK = "https://yandex.ru/profile/107007337379?intent=reviews"
+user_cache = {}
 
 
 # --- FSM ---
@@ -36,12 +33,35 @@ class BookingForm(StatesGroup):
     age = State()
 
 
+# --- TEXTS ---
+WELCOME_TEXT = """
+Добрый день🙌
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+
+Меня зовут Алёна 😊
+Приглашаю вас на занятия 🙌
+
+Выберите действие👇
+"""
+
+
+REVIEW_TEXT = """
+💬 Спасибо, что были на занятии!
+
+Будем очень благодарны, если оставите отзыв 🙏
+
+👉 https://yandex.ru/profile/107007337379?intent=reviews
+"""
+
+
 # --- DB INIT ---
 async def init_db():
     global pool
     pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with pool.acquire() as conn:
+
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS groups (
             id SERIAL PRIMARY KEY,
@@ -66,26 +86,12 @@ async def init_db():
         """)
 
         await conn.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
-            id SERIAL PRIMARY KEY,
-            booking_id INT,
-            type TEXT,
-            sent_at TIMESTAMP
-        );
-        """)
-
-        await conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS groups_unique_idx
         ON groups(name, schedule);
         """)
 
 
 # --- DB ---
-async def get_group(group_id):
-    async with pool.acquire() as conn:
-        return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
-
-
 async def get_groups_by_direction(direction):
     async with pool.acquire() as conn:
         return await conn.fetch("""
@@ -93,6 +99,11 @@ async def get_groups_by_direction(direction):
         WHERE name ILIKE $1
         ORDER BY id
         """, f"%{direction}%")
+
+
+async def get_group(group_id):
+    async with pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM groups WHERE id=$1", group_id)
 
 
 async def add_booking(data):
@@ -132,25 +143,25 @@ async def count_in_group(group_id):
         SELECT COUNT(*) FROM bookings
         WHERE group_id=$1 AND status='approved'
         """, group_id)
-        return row["count"]
+        return int(row["count"])
 
 
 # --- KEYBOARDS ---
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Записаться", callback_data="start")],
-        [InlineKeyboardButton(text="💳 Абонементы", callback_data="abon")]
+        [InlineKeyboardButton(text="📊 Админ панель", callback_data="admin_panel")],
     ])
 
 
 def directions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Хип-хоп дети 6-14", callback_data="dir_kids")],
+        [InlineKeyboardButton(text="Хип-хоп дети", callback_data="dir_kids")],
         [InlineKeyboardButton(text="Хип-хоп взрослые", callback_data="dir_adult")],
         [InlineKeyboardButton(text="Гёрли хип-хоп", callback_data="dir_girly")],
-        [InlineKeyboardButton(text="Контемпорари 7-12", callback_data="dir_contempo")],
-        [InlineKeyboardButton(text="Акробатика 5-12", callback_data="dir_acro")],
-        [InlineKeyboardButton(text="Фристайл 6+", callback_data="dir_freestyle")],
+        [InlineKeyboardButton(text="Контемпорари", callback_data="dir_contempo")],
+        [InlineKeyboardButton(text="Акробатика", callback_data="dir_acro")],
+        [InlineKeyboardButton(text="Фристайл", callback_data="dir_freestyle")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
@@ -163,23 +174,31 @@ def card_kb(group_id, index, total):
     if index < total - 1:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
 
+    kb = []
+    if nav:
+        kb.append(nav)
+
+    kb.append([
+        InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{group_id}")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
+
+def admin_kb(bid):
     return InlineKeyboardMarkup(inline_keyboard=[
-        nav if nav else [],
-        [InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{group_id}")]
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"ok_{bid}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"no_{bid}")
+        ]
     ])
 
 
-# --- TEXT ---
-WELCOME_TEXT = """
-Добрый день🙌
-С вами на связи руководитель танцевальной команды Cosmos Dance Unity
-https://t.me/starcosmoss
-
-Меня зовут Алёна 😊
-Приглашаю вас на занятия 🙌
-
-Выберите действие👇
-"""
+def admin_panel_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Статистика групп", callback_data="stats")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
+    ])
 
 
 # --- START ---
@@ -193,22 +212,47 @@ async def back_main(call: CallbackQuery):
     await call.message.answer(WELCOME_TEXT, reply_markup=main_menu())
 
 
-@dp.callback_query(F.data == "abon")
-async def abon(call: CallbackQuery):
-    await call.message.answer("Напишите менеджеру @samorkata")
-
-
 @dp.callback_query(F.data == "start")
 async def choose_direction(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
 
-# --- CACHE ---
-user_cache = {}
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        return
+    await call.message.answer("📊 Админ панель", reply_markup=admin_panel_kb())
+
+
+# --- STATS ---
+@dp.callback_query(F.data == "stats")
+async def stats(call: CallbackQuery):
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+        SELECT g.name, g.schedule, g.limit_count,
+        COUNT(b.id) FILTER (WHERE b.status='approved') as used
+        FROM groups g
+        LEFT JOIN bookings b ON g.id=b.group_id
+        GROUP BY g.id
+        ORDER BY g.name;
+        """)
+
+    text = "📊 <b>Заполненность групп</b>\n\n"
+
+    for r in rows:
+        free = r["limit_count"] - r["used"]
+        text += f"{r['name']} | {r['schedule']}\n"
+        text += f"👥 {r['used']}/{r['limit_count']} (свободно {free})\n\n"
+
+    await call.message.answer(text, parse_mode="HTML")
 
 
 # --- CARD ---
 async def send_card(call, groups, index):
+    if not groups:
+        await call.message.answer("❌ Нет занятий")
+        return
+
     g = groups[index]
     busy = await count_in_group(g["id"])
     free = g["limit_count"] - busy
@@ -238,7 +282,9 @@ async def show_groups(call: CallbackQuery):
         "dir_freestyle": "Фристайл"
     }
 
-    groups = await get_groups_by_direction(mapping[call.data])
+    direction = mapping[call.data]
+    groups = await get_groups_by_direction(direction)
+
     user_cache[call.from_user.id] = groups
     await send_card(call, groups, 0)
 
@@ -246,7 +292,7 @@ async def show_groups(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("nav_"))
 async def navigate(call: CallbackQuery):
     index = int(call.data.split("_")[1])
-    groups = user_cache.get(call.from_user.id)
+    groups = user_cache.get(call.from_user.id, [])
     await send_card(call, groups, index)
 
 
@@ -255,6 +301,7 @@ async def navigate(call: CallbackQuery):
 async def select_group(call: CallbackQuery, state: FSMContext):
     gid = int(call.data.split("_")[1])
     await state.update_data(group_id=gid)
+
     await call.message.answer("Введите ФИО:")
     await state.set_state(BookingForm.fio)
 
@@ -286,17 +333,12 @@ async def finish(message: Message, state: FSMContext):
 
     bid = await add_booking(data)
 
-    text = f"""
-Заявка #{bid}
+    await bot.send_message(
+        ADMIN_ID,
+        f"📌 Заявка #{bid}\n{data['fio']}\n{data['phone']}\n{group['name']}",
+        reply_markup=admin_kb(bid)
+    )
 
-ФИО: {data['fio']}
-Телефон: {data['phone']}
-Возраст: {data['age']}
-
-Направление: {group['name']}
-"""
-
-    await bot.send_message(ADMIN_ID, text)
     await message.answer("Заявка отправлена 🙌")
     await state.clear()
 
@@ -306,23 +348,24 @@ async def finish(message: Message, state: FSMContext):
 async def ok(call: CallbackQuery):
     bid = int(call.data.split("_")[1])
     booking = await get_booking(bid)
-    group = await get_group(booking["group_id"])
 
     await update_status(bid, "approved")
 
-    # 🎒 экипировка
-    if "Контемпорари" in group["name"] or "Акробатика" in group["name"]:
-        gear = "Обтягивающая одежда и чистые носочки"
+    # 1) подтверждение
+    await bot.send_message(
+        booking["user_id"],
+        "✅ Вы записаны!"
+    )
+
+    # 2) что взять с собой
+    if "Контемпорари" in booking["style"] or "Акробатика" in booking["style"]:
+        pack = "👕 Обтягивающая одежда + чистые носочки"
     else:
-        gear = "Спортивная одежда и кроссовки"
+        pack = "👕 Спортивная одежда + кроссовки"
 
     await bot.send_message(
         booking["user_id"],
-        f"""✅ Вы записаны!
-
-🎒 Что взять с собой:
-{gear}
-"""
+        f"📌 Что взять с собой:\n{pack}"
     )
 
 
@@ -336,46 +379,23 @@ async def no(call: CallbackQuery):
     await bot.send_message(booking["user_id"], "❌ Запись отклонена")
 
 
-# --- BACKGROUND REMINDERS ---
-async def reminders_loop():
-    while True:
-        await asyncio.sleep(60)
-
-        async with pool.acquire() as conn:
-            bookings = await conn.fetch("""
-                SELECT * FROM bookings WHERE status='approved'
-            """)
-
-        for b in bookings:
-            await bot.send_message(
-                b["user_id"],
-                "⏰ Напоминание: скоро ваше занятие!"
-            )
-
-
-# --- AFTER CLASS MESSAGE (simplified demo) ---
-async def review_loop():
-    while True:
-        await asyncio.sleep(3600)
-
-        async with pool.acquire() as conn:
-            bookings = await conn.fetch("""
-                SELECT * FROM bookings WHERE status='approved'
-            """)
-
-        for b in bookings:
-            await bot.send_message(
-                b["user_id"],
-                f"⭐ Как прошло занятие? Оставьте отзыв: {REVIEW_LINK}"
-            )
-
-
 # --- RUN ---
 async def main():
     await init_db()
 
-    asyncio.create_task(reminders_loop())
-    asyncio.create_task(review_loop())
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        INSERT INTO groups (name, schedule, limit_count) VALUES
+        ('Хип-хоп дети 6-8', 'Ср 17:00-18:00', 20),
+        ('Хип-хоп дети 7-9', 'Пн 17:00-18:30', 20),
+        ('Хип-хоп дети 9-11', 'Пн 18:30-20:00', 20),
+        ('Хип-хоп взрослые', 'Ср 17:00-18:00', 20),
+        ('Гёрли хип-хоп', 'Пн 19:00-20:00', 20),
+        ('Контемпорари', 'Вт 20:00-21:00', 20),
+        ('Акробатика', 'Сб 12:00-13:00', 20),
+        ('Фристайл', 'Пт 16:00-17:00', 20)
+        ON CONFLICT (name, schedule) DO NOTHING;
+        """)
 
     await dp.start_polling(bot)
 
