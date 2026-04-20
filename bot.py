@@ -198,7 +198,8 @@ def admin_kb(bid):
 def admin_panel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Заполненность групп", callback_data="admin_stats")],
-        [InlineKeyboardButton(text="➕ Добавить группу", callback_data="add_group")]
+        [InlineKeyboardButton(text="➕ Добавить группу", callback_data="add_group")],
+        [InlineKeyboardButton(text="🗑 Удалить группу", callback_data="delete_group")]
     ])
 
 # --- TEXT ---
@@ -264,6 +265,31 @@ async def add_group_limit(message: Message, state: FSMContext):
     await message.answer("✅ Группа добавлена")
     await state.clear()
 
+@dp.callback_query(F.data == "delete_group")
+async def delete_group_list(call: CallbackQuery):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    async with pool.acquire() as conn:
+        groups = await conn.fetch("SELECT * FROM groups")
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"{g['name']} ({g['schedule']})",
+            callback_data=f"del_{g['id']}"
+        )] for g in groups
+    ])
+
+    await call.message.answer("Выберите группу для удаления:", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("del_"))
+async def delete_group(call: CallbackQuery):
+    gid = int(call.data.split("_")[1])
+
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM groups WHERE id=$1", gid)
+
+    await call.message.answer("✅ Группа удалена")
 
 @dp.callback_query(F.data == "back_main")
 async def back_main(call: CallbackQuery):
@@ -298,11 +324,25 @@ async def send_card(call, groups, index):
 🟢 Свободных мест: {free}
 """
 
-    await call.message.edit_text(
-        text,
-        reply_markup=card_kb(g["id"], index, len(groups)),
-        parse_mode="HTML"
-    )
+    buttons = []
+
+    # навигация
+    nav = []
+    if index > 0:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"nav_{index-1}"))
+    if index < len(groups) - 1:
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
+
+    if nav:
+        buttons.append(nav)
+
+    # запись
+    if free > 0:
+        buttons.append([InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{g['id']}")])
+    else:
+        buttons.append([InlineKeyboardButton(text="❌ Мест нет", callback_data="no_slots")])
+
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
 
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
