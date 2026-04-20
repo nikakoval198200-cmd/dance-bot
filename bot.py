@@ -318,19 +318,18 @@ async def fio(m: Message, s: FSMContext):
     await m.answer("Телефон:")
     await s.set_state(BookingForm.phone)
 
-
-
-@dp.message(BookingForm.phone)
-async def phone(m: Message, s: FSMContext):
+@dp.message(BookingForm.age)
+async def finish(m: Message, s: FSMContext):
     await s.update_data(phone=m.text)
     await m.answer("Возраст:")
     await s.set_state(BookingForm.age)
 
 
-@dp.message(BookingForm.age)
-async def finish(m: Message, s: FSMContext):
-    data = await s.get_data()
-    group = await get_group(data["group_id"])
+@dp.message()
+async def fallback(m: Message, state: FSMContext):
+    current = await state.get_state()
+    if current is None:
+        return
 
     data.update({
         "age": m.text,
