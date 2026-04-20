@@ -1,6 +1,6 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import asyncpg
@@ -38,6 +38,7 @@ async def init_db():
     pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with pool.acquire() as conn:
+        # группы с уникальностью
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS groups (
             id SERIAL PRIMARY KEY,
@@ -62,7 +63,7 @@ async def init_db():
         );
         """)
 
-        # 🧹 Удаляем дубли (один раз при запуске)
+        # удаление дублей
         await conn.execute("""
         DELETE FROM groups
         WHERE id NOT IN (
@@ -80,6 +81,7 @@ async def get_groups_by_direction(direction):
         SELECT DISTINCT ON (name, schedule) *
         FROM groups
         WHERE name ILIKE $1
+        ORDER BY name, schedule
         """, f"%{direction}%")
 
 
@@ -171,35 +173,26 @@ def card_kb(group_id, index, total):
 
 
 # --- START ---
+WELCOME_TEXT = """
+Добрый день🙌
+С вами на связи руководитель танцевальной команды Cosmos Dance Unity
+https://t.me/starcosmoss
+
+Меня зовут Алёна 😊
+Приглашаю вас на занятия 🙌
+
+Выберите действие👇
+"""
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
-    text = """
-Добрый день🙌
-С вами на связи руководитель танцевальной команды Cosmos Dance Unity
-https://t.me/starcosmoss
-
-Меня зовут Алёна 😊
-Приглашаю вас на занятия 🙌
-
-Выберите действие👇
-"""
-    await message.answer(text, reply_markup=main_menu())
+    await message.answer(WELCOME_TEXT, reply_markup=main_menu())
 
 
-# --- ВОЗВРАТ В МЕНЮ (фикс) ---
 @dp.callback_query(F.data == "back_main")
 async def back_main(call: CallbackQuery):
-    text = """
-Добрый день🙌
-С вами на связи руководитель танцевальной команды Cosmos Dance Unity
-https://t.me/starcosmoss
-
-Меня зовут Алёна 😊
-Приглашаю вас на занятия 🙌
-
-Выберите действие👇
-"""
-    await call.message.answer(text, reply_markup=main_menu())
+    await call.message.answer(WELCOME_TEXT, reply_markup=main_menu())
 
 
 # --- ABON ---
@@ -217,7 +210,7 @@ async def choose_direction(call: CallbackQuery):
     )
 
 
-# --- PAGINATION CACHE ---
+# --- CACHE ---
 user_cache = {}
 
 
@@ -269,7 +262,7 @@ async def navigate(call: CallbackQuery):
     await send_card(call, groups, index)
 
 
-# --- BOOKING FLOW ---
+# --- BOOKING ---
 @dp.callback_query(F.data.startswith("group_"))
 async def select_group(call: CallbackQuery, state: FSMContext):
     gid = int(call.data.split("_")[1])
@@ -321,28 +314,8 @@ Username: @{username}
 """
 
     await bot.send_message(ADMIN_ID, text)
-
     await message.answer("Заявка отправлена 🙌")
     await state.clear()
-
-
-# --- ADMIN ---
-@dp.callback_query(F.data.startswith("ok_"))
-async def ok(call: CallbackQuery):
-    bid = int(call.data.split("_")[1])
-    booking = await get_booking(bid)
-
-    await update_status(bid, "approved")
-    await bot.send_message(booking["user_id"], "✅Поздравляем! Вы записаны!")
-
-
-@dp.callback_query(F.data.startswith("no_"))
-async def no(call: CallbackQuery):
-    bid = int(call.data.split("_")[1])
-    booking = await get_booking(bid)
-
-    await update_status(bid, "declined")
-    await bot.send_message(booking["user_id"], "❌ К сожалению, запись отклонена")
 
 
 # --- RUN ---
