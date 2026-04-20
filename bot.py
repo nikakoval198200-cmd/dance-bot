@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.filters import StateFilter
+
 
 # --- CONFIG ---
 TOKEN = os.getenv("BOT_TOKEN")
@@ -312,12 +312,12 @@ async def select(call: CallbackQuery, state: FSMContext):
     await call.message.answer("ФИО:")
     await state.set_state(BookingForm.fio)
 
+@dp.message(BookingForm.fio)
+async def fio(m: Message, s: FSMContext):
+    await s.update_data(fio=m.text)
+    await m.answer("Телефон:")
+    await s.set_state(BookingForm.phone)
 
-@dp.message(StateFilter(BookingForm.phone))
-async def phone(m: Message, s: FSMContext):
-    await s.update_data(phone=m.text)
-    await m.answer("Возраст:")
-    await s.set_state(BookingForm.age)
 
 
 @dp.message(BookingForm.phone)
