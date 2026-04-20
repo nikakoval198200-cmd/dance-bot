@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
 
 
 # --- CONFIG ---
@@ -49,6 +50,9 @@ https://yandex.ru/profile/107007337379?intent=reviews
 Это займет всего 1 минуту, но сильно поможет нашей команде 💫
 """
 
+async def send_review_later(user_id):
+    await asyncio.sleep(5 * 24 * 60 * 60)  # 5 дней в секундах
+    await bot.send_message(user_id, REVIEW_TEXT)
 # --- INIT DB ---
 async def init_db():
     global pool
@@ -468,6 +472,9 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
+    asyncio.create_task(send_review_later(booking["user_id"]))
+    
+
     # 👉 получаем группу
     group = await get_group(booking["group_id"])
 
@@ -497,6 +504,7 @@ async def ok(call: CallbackQuery):
         text,
         parse_mode="HTML"
     )
+
 
 
 @dp.callback_query(F.data.startswith("no_"))
