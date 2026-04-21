@@ -225,9 +225,7 @@ def get_next_lesson_datetime(schedule: str):
 # --- KEYBOARDS ---
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Записаться", callback_data="start")],
-        [InlineKeyboardButton(text="🎁 Пробное занятие", callback_data="trial")],
-        [InlineKeyboardButton(text="💳 Абонементы", callback_data="abon")]
+        [InlineKeyboardButton(text="🎁 Пробное занятие (Free)", callback_data="trial")]
     ])
 
 def days_kb(group_id, schedule):
@@ -309,10 +307,11 @@ WELCOME_TEXT = """
 Добрый день🙌
 С вами на связи руководитель танцевальной команды Cosmos Dance Unity
 https://t.me/starcosmoss
+Присоединяйтесь🎉
+https://vk.com/cosmos_dance_unity
 
 Меня зовут Алёна 😊
-Приглашаю вас на занятия 🙌
-
+Приглашаю вас к нам на занятия по танцам🙌
 Выберите действие👇
 """
 
@@ -485,25 +484,6 @@ async def send_card(call, groups, index):
         parse_mode="HTML"
     )
 
-
-@dp.callback_query(F.data.startswith("book_all_"))
-async def book_all(call: CallbackQuery, state: FSMContext):
-    group_id = int(call.data.split("_")[2])
-
-    async with pool.acquire() as conn:
-        group = await conn.fetchrow(
-            "SELECT * FROM groups WHERE id=$1",
-            group_id
-        )
-
-    await state.update_data(
-        group_id=group_id,
-        group_name=group["name"],
-        selected_day="оба дня"
-    )
-
-    await call.message.answer("Введите ФИО:")
-    await state.set_state(BookingForm.fio)
 
 
 @dp.callback_query(F.data.startswith("choose_day_"))
