@@ -317,6 +317,43 @@ def get_address(group_name: str, schedule: str):
     # стандартный адрес
     return "📍 Солнцево-парк, ул. Лётчика Грицевца 3 с2\nЦентр развития и творчества им. А. Невского"
 
+def get_prices(group_name: str):
+    name = group_name.lower()
+
+    if "контемпорари" in name:
+        return """
+💳 <b>Абонемент:</b>
+5200₽ / 8 часов
+"""
+
+    if "6-8" in name:
+        return """
+💳 <b>Абонемент:</b>
+
+6–8 лет — 4800₽ / 8 часов
+"""
+
+    if "7-9" in name or "9-11" in name:
+        return """
+💳 <b>Абонемент:</b>
+
+7–9 лет и 9–11 лет — 6800₽ / 12 часов
+"""
+
+    if "10-14" in name:
+        return """
+💳 <b>Абонемент:</b>
+8000₽ / 16 часов
+"""
+
+    if "хип-хоп" in name:
+        return """
+💳 <b>Абонемент:</b>
+6800₽ / 12 часов
+"""
+
+    return ""
+
 
 # --- START ---
 @dp.message(CommandStart())
@@ -431,6 +468,10 @@ async def send_card(call, groups, index):
     # 📍 адрес (берём первую расписание как базу)
     address = get_address(group["name"], group["schedules"][0])
 
+    prices = get_prices(group["name"])
+
+    prices = get_prices(group["name"])
+
     text = f"""
 🟣 <b>{group['name']}</b>
 
@@ -439,6 +480,8 @@ async def send_card(call, groups, index):
 📍 {address}
 
 👥 Свободно: {free}/{group['limit_count']}
+
+{prices}
 """
 
     buttons = []
