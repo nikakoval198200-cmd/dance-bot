@@ -37,7 +37,6 @@ MSK = ZoneInfo("Europe/Moscow")
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 scheduler = AsyncIOScheduler(timezone=MSK)
-scheduler.start()
 
 user_cache = {}
 
@@ -602,6 +601,7 @@ async def review_bad(call: CallbackQuery):
 # --- RUN ---
 async def main():
     await init_db()
+    scheduler.start()
 
     async with pool.acquire() as conn:
         await conn.execute("""
