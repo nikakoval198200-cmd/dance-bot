@@ -417,7 +417,7 @@ async def send_card(call, groups, index):
 
     address = get_address(g["name"], g["schedule"])
 
-text = f"""
+    text = f"""
 🟣 <b>{g['name']}</b>
 
 📅 {g['schedule']}
