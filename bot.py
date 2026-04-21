@@ -642,11 +642,11 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
-async with pool.acquire() as conn:
-    group = await conn.fetchrow(
-        "SELECT * FROM groups WHERE name=$1 LIMIT 1",
-        data["group_name"]
-    )
+    async with pool.acquire() as conn:
+        group = await conn.fetchrow(
+            "SELECT * FROM groups WHERE id=$1",
+            booking["group_id"]
+        )
 
     # 👉 рассчитываем ближайшее занятие
     lesson_dt = get_next_lesson_datetime(group["schedule"])
