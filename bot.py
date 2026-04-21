@@ -542,13 +542,14 @@ async def select_day(call: CallbackQuery, state: FSMContext):
     group = groups[index]
 
     await state.update_data(
+        group_id=group["id"],        # ✅ ВОТ ЭТО КРИТИЧНО
         group_name=group["name"],
         selected_day=selected_day
     )
 
     await call.message.answer("Введите ФИО:")
     await state.set_state(BookingForm.fio)
-
+    
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
     if call.from_user.id != ADMIN_ID:
@@ -648,7 +649,7 @@ async def finish(message: Message, state: FSMContext):
         group = await conn.fetchrow(
             "SELECT * FROM groups WHERE id=$1",
             data["group_id"]
-    )
+        )
 
     data.update({
         "age": message.text,
