@@ -251,7 +251,7 @@ def directions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Хип-хоп дети 6-14", callback_data="dir_kids")],
         [InlineKeyboardButton(text="Хип-хоп взрослые", callback_data="dir_adult")],
-        [InlineKeyboardButton(text="Гёрли хип-хоп", callback_data="dir_girly")],
+        [InlineKeyboardButton(text="Гёрли хип-хоп 14+", callback_data="dir_girly")],
         [InlineKeyboardButton(text="Контемпорари 7-12", callback_data="dir_contempo")],
         [InlineKeyboardButton(text="Акробатика 5-12", callback_data="dir_acro")],
         [InlineKeyboardButton(text="Фристайл 6+", callback_data="dir_freestyle")],
