@@ -452,14 +452,7 @@ async def send_card(call, groups, index):
     if nav:
         buttons.append(nav)
 
-    # 🟣 если 2 дня — кнопка "оба"
-    if len(group["schedules"]) > 1:
-        buttons.append([
-            InlineKeyboardButton(
-                text="📝 Записаться на оба дня",
-                callback_data=f"book_all_{group['id']}"
-            )
-        ])
+
 
     # обычная запись
     buttons.append([
