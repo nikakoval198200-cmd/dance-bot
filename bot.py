@@ -441,7 +441,7 @@ async def send_card(call, groups, index):
     buttons = []
 
     nav = []
-    if index > 0:
+    if True:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"nav_{index-1}"))
     if index < len(groups) - 1:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
