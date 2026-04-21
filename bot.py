@@ -296,6 +296,17 @@ https://t.me/starcosmoss
 Выберите действие👇
 """
 
+def get_address(group_name: str, schedule: str):
+    name = group_name.lower()
+    sched = schedule.lower()
+
+    # особый случай
+    if "акробатика" in name and "сб" in sched and "10:45" in sched:
+        return "📍 Солнцево-парк, ул. Авиаконструктора Петлякова 5\n(женский клуб)"
+
+    # стандартный адрес
+    return "📍 Солнцево-парк, ул. Лётчика Грицевца 3 с2\nЦентр развития и творчества им. А. Невского"
+
 
 # --- START ---
 @dp.message(CommandStart())
@@ -404,10 +415,14 @@ async def send_card(call, groups, index):
     busy = await count_in_group(g["id"])
     free = g["limit_count"] - busy
 
-    text = f"""
+    address = get_address(g["name"], g["schedule"])
+
+text = f"""
 🟣 <b>{g['name']}</b>
 
 📅 {g['schedule']}
+{address}
+
 🟢 Свободных мест: {free}
 """
 
@@ -613,11 +628,14 @@ async def ok(call: CallbackQuery):
         outfit = "👕 Удобная одежда"
 
     # --- сообщение ---
+    address = get_address(group["name"], group["schedule"])
+
     text = f"""
 ✅ <b>Вы записаны на занятие!</b>
 
 📌 Направление: {booking['style']}
 📅 Время: {group['schedule']}
+{address}
 
 ❗️Что взять с собой:
 {outfit}
