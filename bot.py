@@ -245,16 +245,7 @@ def days_kb(group_id, schedule):
         ])
 
     # если 2 дня — добавляем кнопку "оба"
-    if len(days) > 1:
-        kb.append([
-            InlineKeyboardButton(
-                text=f"Оба дня ({schedule})",
-                callback_data=f"day_{group_id}_all"
-            )
-        ])
-
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
+    
 
 def directions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -652,7 +643,6 @@ async def finish(message: Message, state: FSMContext):
 
 Направление: {group['name']}
 📅 День: {selected_day}
-Расписание: {group['schedule']}
 
 Username: @{username}
 """
