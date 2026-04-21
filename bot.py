@@ -11,6 +11,17 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import asyncio
+from datetime import datetime, timedelta
+
+WEEKDAYS = {
+    "пн": 0,
+    "вт": 1,
+    "ср": 2,
+    "чт": 3,
+    "пт": 4,
+    "сб": 5,
+    "вс": 6,
+}
 
 
 # --- CONFIG ---
@@ -23,6 +34,10 @@ dp = Dispatcher(storage=MemoryStorage())
 
 pool = None
 MSK = ZoneInfo("Europe/Moscow")
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler(timezone=MSK)
+scheduler.start()
 
 user_cache = {}
 
@@ -49,10 +64,21 @@ https://yandex.ru/profile/107007337379?intent=reviews
 
 Это займет всего 1 минуту, но сильно поможет нашей команде 💫
 """
+async def send_review_request(user_id):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="Отлично", callback_data="review_good"),
+            InlineKeyboardButton(text="Плохо", callback_data="review_bad")
+        ]
+    ])
 
-async def send_review_later(user_id):
-    await asyncio.sleep(5 * 24 * 60 * 60)  # 5 дней в секундах
-    await bot.send_message(user_id, REVIEW_TEXT)
+    await bot.send_message(
+        user_id,
+        "💜 Спасибо за посещение!\n\nКак прошло занятие?",
+        reply_markup=kb
+    )
+
+
 # --- INIT DB ---
 async def init_db():
     global pool
@@ -151,11 +177,37 @@ async def count_in_group(group_id):
 
         return int(row["count"])
 
+def get_next_lesson_datetime(schedule: str):
+    now = datetime.now(MSK)
+
+    days_part, time_part = schedule.split(" ", 1)
+    days = [d.strip().lower() for d in days_part.split(",")]
+
+    start_time = time_part.split("-")[0]
+    hour, minute = map(int, start_time.split(":"))
+
+    nearest = None
+
+    for day in days:
+        target = WEEKDAYS[day]
+        delta = target - now.weekday()
+        if delta <= 0:
+            delta += 7
+
+        date = now + timedelta(days=delta)
+        date = date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        if not nearest or date < nearest:
+            nearest = date
+
+    return nearest
+
 
 # --- KEYBOARDS ---
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Записаться", callback_data="start")],
+        [InlineKeyboardButton(text="🎁 Пробное занятие", callback_data="trial")],
         [InlineKeyboardButton(text="💳 Абонементы", callback_data="abon")]
     ])
 
@@ -309,6 +361,11 @@ async def abon(call: CallbackQuery):
 async def choose_direction(call: CallbackQuery):
     await call.message.answer("Выберите направление:", reply_markup=directions_kb())
 
+@dp.callback_query(F.data == "trial")
+async def trial(call: CallbackQuery, state: FSMContext):
+    await state.update_data(is_trial=True)
+    await choose_direction(call)
+
 
 # --- CARD ---
 async def send_card(call, groups, index):
@@ -441,7 +498,11 @@ async def finish(message: Message, state: FSMContext):
     bid = await add_booking(data)
     username = message.from_user.username or "нет username"
 
+    is_trial = data.get("is_trial")
+    trial_text = "🎁 ПРОБНОЕ ЗАНЯТИЕ\n\n" if is_trial else ""
+
     text = f"""
+{trial_text}
 📌 ЗАЯВКА #{bid}
 
 ФИО: {data['fio']}
@@ -453,7 +514,6 @@ async def finish(message: Message, state: FSMContext):
 
 Username: @{username}
 """
-
     await bot.send_message(
         ADMIN_ID,
         text,
@@ -472,7 +532,18 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
-    asyncio.create_task(send_review_later(booking["user_id"]))
+    group = await get_group(booking["group_id"])
+
+    lesson_dt = get_next_lesson_datetime(group["schedule"])
+    lesson_end = lesson_dt + timedelta(hours=1)
+
+    scheduler.add_job(
+        send_review_request,
+        trigger="date",
+        run_date=lesson_end,
+        args=[booking["user_id"]]
+    )
+
     
 
     # 👉 получаем группу
@@ -514,6 +585,18 @@ async def no(call: CallbackQuery):
 
     await update_status(bid, "declined")
     await bot.send_message(booking["user_id"], "❌ Запись отклонена")
+
+@dp.callback_query(F.data == "review_good")
+async def review_good(call: CallbackQuery):
+    await call.message.answer(
+        "💜 Спасибо за высокую оценку!\n\nОставьте отзыв 👇\nhttps://yandex.ru/profile/107007337379?intent=reviews"
+    )
+
+@dp.callback_query(F.data == "review_bad")
+async def review_bad(call: CallbackQuery):
+    await call.message.answer(
+        "🙏 Нам очень жаль, что вам не понравилось.\nМы обязательно станем лучше!"
+    )
 
 
 # --- RUN ---
