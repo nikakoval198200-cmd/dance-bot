@@ -210,6 +210,33 @@ def main_menu():
         [InlineKeyboardButton(text="💳 Абонементы", callback_data="abon")]
     ])
 
+def days_kb(group_id, schedule):
+    # пример schedule: "Ср, Пт 17:00-18:00"
+    days_part, time_part = schedule.split(" ", 1)
+    days = [d.strip() for d in days_part.split(",")]
+
+    kb = []
+
+    # каждая дата отдельно
+    for day in days:
+        kb.append([
+            InlineKeyboardButton(
+                text=f"{day} {time_part}",
+                callback_data=f"day_{group_id}_{day}"
+            )
+        ])
+
+    # если 2 дня — добавляем кнопку "оба"
+    if len(days) > 1:
+        kb.append([
+            InlineKeyboardButton(
+                text=f"Оба дня ({schedule})",
+                callback_data=f"day_{group_id}_all"
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=kb)
+
 
 def directions_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -398,11 +425,38 @@ async def send_card(call, groups, index):
 
     # запись
     if free > 0:
-        buttons.append([InlineKeyboardButton(text="📝 Записаться", callback_data=f"group_{g['id']}")])
+        buttons.append([InlineKeyboardButton(text="📝 Выбрать день", callback_data=f"choose_day_{g['id']}")])
     else:
         buttons.append([InlineKeyboardButton(text="❌ Мест нет", callback_data="no_slots")])
 
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+
+@dp.callback_query(F.data.startswith("choose_day_"))
+async def choose_day(call: CallbackQuery):
+    gid = int(call.data.split("_")[2])
+    group = await get_group(gid)
+
+    await call.message.answer(
+        "Выберите день:",
+        reply_markup=days_kb(gid, group["schedule"])
+    )
+
+@dp.callback_query(F.data.startswith("day_"))
+async def select_day(call: CallbackQuery, state: FSMContext):
+    parts = call.data.split("_")
+
+    gid = int(parts[1])
+    selected_day = parts[2]
+
+    group = await get_group(gid)
+
+    await state.update_data(
+        group_id=gid,
+        selected_day=selected_day
+    )
+
+    await call.message.answer("Введите ФИО:")
+    await state.set_state(BookingForm.fio)
 
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
@@ -486,6 +540,7 @@ async def phone(message: Message, state: FSMContext):
 @dp.message(BookingForm.age)
 async def finish(message: Message, state: FSMContext):
     data = await state.get_data()
+    selected_day = data.get("selected_day", "не указан")
     group = await get_group(data["group_id"])
 
     data.update({
@@ -501,7 +556,6 @@ async def finish(message: Message, state: FSMContext):
     trial_text = "🎁 ПРОБНОЕ ЗАНЯТИЕ\n\n" if is_trial else ""
 
     text = f"""
-{trial_text}
 📌 ЗАЯВКА #{bid}
 
 ФИО: {data['fio']}
@@ -509,6 +563,7 @@ async def finish(message: Message, state: FSMContext):
 Возраст: {data['age']}
 
 Направление: {group['name']}
+📅 День: {selected_day}
 Расписание: {group['schedule']}
 
 Username: @{username}
@@ -533,7 +588,13 @@ async def ok(call: CallbackQuery):
 
     group = await get_group(booking["group_id"])
 
+    selected_day = data.get("selected_day")
+
+if selected_day == "all":
     lesson_dt = get_next_lesson_datetime(group["schedule"])
+else:
+    custom_schedule = f"{selected_day} " + group["schedule"].split(" ", 1)[1]
+    lesson_dt = get_next_lesson_datetime(custom_schedule)
     lesson_end = lesson_dt + timedelta(hours=1)
 
     scheduler.add_job(
