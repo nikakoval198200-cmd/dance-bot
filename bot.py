@@ -176,6 +176,22 @@ async def count_in_group(group_id):
 
         return int(row["count"])
 
+def group_by_name(groups):
+    result = {}
+
+    for g in groups:
+        name = g["name"]
+
+        if name not in result:
+            result[name] = {
+                "name": name,
+                "schedules": []
+            }
+
+        result[name]["schedules"].append(g["schedule"])
+
+    return list(result.values())
+
 def get_next_lesson_datetime(schedule: str):
     now = datetime.now(MSK)
 
@@ -200,6 +216,8 @@ def get_next_lesson_datetime(schedule: str):
             nearest = date
 
     return nearest
+
+
 
 
 # --- KEYBOARDS ---
@@ -409,21 +427,17 @@ async def send_card(call, groups, index):
     if not groups:
         await call.message.answer("❌ Нет доступных занятий")
         return
-
-    g = groups[index]
-
-    busy = await count_in_group(g["id"])
-    free = g["limit_count"] - busy
-
+        
     address = get_address(g["name"], g["schedule"])
 
+    group = groups[index]
+
+    schedules_text = "\n".join(group["schedules"])
+
     text = f"""
-🟣 <b>{g['name']}</b>
+🟣 <b>{group['name']}</b>
 
-📅 {g['schedule']}
-{address}
-
-🟢 Свободных мест: {free}
+📅 {schedules_text}
 """
 
     buttons = []
@@ -440,7 +454,7 @@ async def send_card(call, groups, index):
 
     # запись
     if free > 0:
-        buttons.append([InlineKeyboardButton(text="📝 Выбрать день", callback_data=f"choose_day_{g['id']}")])
+        buttons.append([InlineKeyboardButton(text="📝 Выбрать день", callback_data=f"group_{group['name']}")])
     else:
         buttons.append([InlineKeyboardButton(text="❌ Мест нет", callback_data="no_slots")])
 
@@ -509,7 +523,8 @@ async def show_groups(call: CallbackQuery):
     }
 
     direction = mapping[call.data]
-    groups = await get_groups_by_direction(direction)
+    raw_groups = await get_groups_by_direction(direction)
+    groups = group_by_name(raw_groups)
 
     user_cache[call.from_user.id] = groups
     await send_card(call, groups, 0)
@@ -530,7 +545,9 @@ async def navigate(call: CallbackQuery):
 # --- BOOKING ---
 @dp.callback_query(F.data.startswith("group_"))
 async def select_group(call: CallbackQuery, state: FSMContext):
-    gid = int(call.data.split("_")[1])
+    group_name = call.data.split("_", 1)[1]
+
+    await state.update_data(group_name=group_name)
 
     await state.update_data(group_id=gid)
 
@@ -601,7 +618,11 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
-    group = await get_group(booking["group_id"])
+    async with pool.acquire() as conn:
+    group = await conn.fetchrow(
+        "SELECT * FROM groups WHERE name=$1 LIMIT 1",
+        data["group_name"]
+    )
 
     # 👉 рассчитываем ближайшее занятие
     lesson_dt = get_next_lesson_datetime(group["schedule"])
