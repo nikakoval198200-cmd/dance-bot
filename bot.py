@@ -607,11 +607,18 @@ async def navigate(call: CallbackQuery):
 # --- BOOKING ---
 @dp.callback_query(F.data.startswith("group_"))
 async def select_group(call: CallbackQuery, state: FSMContext):
-    group_name = call.data.split("_", 1)[1]
+    group_id = int(call.data.split("_")[1])
 
-    await state.update_data(group_name=group_name)
+    async with pool.acquire() as conn:
+        group = await conn.fetchrow(
+            "SELECT * FROM groups WHERE id=$1",
+            group_id
+        )
 
-    await state.update_data(group_id=gid)
+    await state.update_data(
+        group_id=group_id,
+        group_name=group["name"]
+    )
 
     await call.message.answer("Введите ФИО:")
     await state.set_state(BookingForm.fio)
@@ -639,9 +646,9 @@ async def finish(message: Message, state: FSMContext):
 
     async with pool.acquire() as conn:
         group = await conn.fetchrow(
-            "SELECT * FROM groups WHERE name=$1 LIMIT 1",
-            group_name
-        )
+            "SELECT * FROM groups WHERE id=$1",
+            data["group_id"]
+    )
 
     data.update({
         "age": message.text,
