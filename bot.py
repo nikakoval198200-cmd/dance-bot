@@ -427,8 +427,6 @@ async def send_card(call, groups, index):
     if not groups:
         await call.message.answer("❌ Нет доступных занятий")
         return
-        
-    address = get_address(g["name"], g["schedule"])
 
     group = groups[index]
 
@@ -442,7 +440,6 @@ async def send_card(call, groups, index):
 
     buttons = []
 
-    # навигация
     nav = []
     if index > 0:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"nav_{index-1}"))
@@ -452,35 +449,56 @@ async def send_card(call, groups, index):
     if nav:
         buttons.append(nav)
 
-    # запись
-    if free > 0:
-        buttons.append([InlineKeyboardButton(text="📝 Выбрать день", callback_data=f"group_{group['name']}")])
-    else:
-        buttons.append([InlineKeyboardButton(text="❌ Мест нет", callback_data="no_slots")])
+    buttons.append([
+        InlineKeyboardButton(
+            text="📝 Выбрать день",
+            callback_data=f"choose_day_{index}"
+        )
+    ])
 
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons), parse_mode="HTML")
+    await call.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
+    )
 
 @dp.callback_query(F.data.startswith("choose_day_"))
 async def choose_day(call: CallbackQuery):
-    gid = int(call.data.split("_")[2])
-    group = await get_group(gid)
+    index = int(call.data.split("_")[2])
+
+    groups = user_cache.get(call.from_user.id, [])
+    group = groups[index]
+
+    # превращаем расписание в кнопки
+    schedule_text = "\n".join(group["schedules"])
+
+    kb = []
+
+    for s in group["schedules"]:
+        kb.append([
+            InlineKeyboardButton(
+                text=s,
+                callback_data=f"day_{index}_{s}"
+            )
+        ])
 
     await call.message.answer(
         "Выберите день:",
-        reply_markup=days_kb(gid, group["schedule"])
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
     )
 
 @dp.callback_query(F.data.startswith("day_"))
 async def select_day(call: CallbackQuery, state: FSMContext):
     parts = call.data.split("_")
 
-    gid = int(parts[1])
+    index = int(parts[1])
     selected_day = parts[2]
 
-    group = await get_group(gid)
+    groups = user_cache.get(call.from_user.id, [])
+    group = groups[index]
 
     await state.update_data(
-        group_id=gid,
+        group_name=group["name"],
         selected_day=selected_day
     )
 
@@ -573,7 +591,13 @@ async def phone(message: Message, state: FSMContext):
 async def finish(message: Message, state: FSMContext):
     data = await state.get_data()
     selected_day = data.get("selected_day", "не указан")
-    group = await get_group(data["group_id"])
+    group_name = data["group_name"]
+
+async with pool.acquire() as conn:
+    group = await conn.fetchrow(
+        "SELECT * FROM groups WHERE name=$1 LIMIT 1",
+        group_name
+    )
 
     data.update({
         "age": message.text,
