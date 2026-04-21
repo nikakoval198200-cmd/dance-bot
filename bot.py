@@ -254,7 +254,6 @@ def directions_kb():
         [InlineKeyboardButton(text="Гёрли хип-хоп 14+", callback_data="dir_girly")],
         [InlineKeyboardButton(text="Контемпорари 7-12", callback_data="dir_contempo")],
         [InlineKeyboardButton(text="Акробатика 5-12", callback_data="dir_acro")],
-        [InlineKeyboardButton(text="Фристайл 6+", callback_data="dir_freestyle")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_main")]
     ])
 
@@ -326,29 +325,45 @@ def get_prices(group_name: str):
 5200₽ / 8 часов
 """
 
-    if "6-8" in name:
+    if "хип-хоп взрослые" in name:
         return """
 💳 <b>Абонемент:</b>
+6000₽ / 8 часов
+"""
 
+    if "гёрли" in name:
+        return """
+💳 <b>Абонемент:</b>
+5600₽ / 8 часов
+"""
+
+    if "акробатика" in name:
+        return """
+💳 <b>Абонемент:</b>
+2200₽ / 4 часа
+"""
+
+    if "6-8" in name:
+        return """
+💳 <b>Абонементы:</b>
 6–8 лет — 4800₽ / 8 часов
 """
 
     if "7-9" in name or "9-11" in name:
         return """
-💳 <b>Абонемент:</b>
-
+💳 <b>Абонементы:</b>
 7–9 лет и 9–11 лет — 6800₽ / 12 часов
 """
 
     if "10-14" in name:
         return """
-💳 <b>Абонемент:</b>
+💳 <b>Абонементы:</b>
 8000₽ / 16 часов
 """
 
-    if "хип-хоп" in name:
+    if "хип-хоп дети" in name:
         return """
-💳 <b>Абонемент:</b>
+💳 <b>Абонементы:</b>
 6800₽ / 12 часов
 """
 
@@ -588,8 +603,7 @@ async def show_groups(call: CallbackQuery):
         "dir_adult": "Хип-хоп взрослые",
         "dir_girly": "Гёрли",
         "dir_contempo": "Контемпорари",
-        "dir_acro": "Акробатика",
-        "dir_freestyle": "Фристайл"
+        "dir_acro": "Акробатика"
     }
 
     direction = mapping[call.data]
