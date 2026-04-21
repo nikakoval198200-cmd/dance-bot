@@ -588,15 +588,13 @@ async def ok(call: CallbackQuery):
 
     group = await get_group(booking["group_id"])
 
-    selected_day = data.get("selected_day")
-
-if selected_day == "all":
+    # 👉 рассчитываем ближайшее занятие
     lesson_dt = get_next_lesson_datetime(group["schedule"])
-else:
-    custom_schedule = f"{selected_day} " + group["schedule"].split(" ", 1)[1]
-    lesson_dt = get_next_lesson_datetime(custom_schedule)
+
+    # 👉 считаем окончание (+1 час)
     lesson_end = lesson_dt + timedelta(hours=1)
 
+    # 👉 ставим задачу отправки отзыва
     scheduler.add_job(
         send_review_request,
         trigger="date",
@@ -604,11 +602,7 @@ else:
         args=[booking["user_id"]]
     )
 
-    
-
-    # 👉 получаем группу
-    group = await get_group(booking["group_id"])
-
+    # --- одежда ---
     style = booking["style"].lower()
 
     if "хип-хоп" in style or "фристайл" in style:
@@ -618,6 +612,7 @@ else:
     else:
         outfit = "👕 Удобная одежда"
 
+    # --- сообщение ---
     text = f"""
 ✅ <b>Вы записаны на занятие!</b>
 
