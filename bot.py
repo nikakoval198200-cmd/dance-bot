@@ -500,7 +500,7 @@ async def send_card(call, groups, index):
     # обычная запись
     buttons.append([
         InlineKeyboardButton(
-            text="📝 Выбрать день",
+            text="📝 Выбрать день (первое посещение бесплатно)",
             callback_data=f"choose_day_{index}"
         )
     ])
