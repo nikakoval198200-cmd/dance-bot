@@ -593,11 +593,11 @@ async def finish(message: Message, state: FSMContext):
     selected_day = data.get("selected_day", "не указан")
     group_name = data["group_name"]
 
-async with pool.acquire() as conn:
-    group = await conn.fetchrow(
-        "SELECT * FROM groups WHERE name=$1 LIMIT 1",
-        group_name
-    )
+    async with pool.acquire() as conn:
+        group = await conn.fetchrow(
+            "SELECT * FROM groups WHERE name=$1 LIMIT 1",
+            group_name
+        )
 
     data.update({
         "age": message.text,
@@ -642,7 +642,7 @@ async def ok(call: CallbackQuery):
 
     await update_status(bid, "approved")
 
-    async with pool.acquire() as conn:
+async with pool.acquire() as conn:
     group = await conn.fetchrow(
         "SELECT * FROM groups WHERE name=$1 LIMIT 1",
         data["group_name"]
