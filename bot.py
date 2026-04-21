@@ -185,6 +185,8 @@ def group_by_name(groups):
         if name not in result:
             result[name] = {
                 "name": name,
+                "id": g["id"],
+                "limit_count": g["limit_count"],
                 "schedules": []
             }
 
@@ -432,16 +434,27 @@ async def send_card(call, groups, index):
 
     schedules_text = "\n".join(group["schedules"])
 
+    # 👥 свободные места
+    busy = await count_in_group(group["id"])
+    free = group["limit_count"] - busy
+
+    # 📍 адрес (берём первую расписание как базу)
+    address = get_address(group["name"], group["schedules"][0])
+
     text = f"""
 🟣 <b>{group['name']}</b>
 
 📅 {schedules_text}
+
+📍 {address}
+
+👥 Свободно: {free}/{group['limit_count']}
 """
 
     buttons = []
 
     nav = []
-    if True:
+    if index > 0:
         nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"nav_{index-1}"))
     if index < len(groups) - 1:
         nav.append(InlineKeyboardButton(text="➡️", callback_data=f"nav_{index+1}"))
@@ -449,6 +462,16 @@ async def send_card(call, groups, index):
     if nav:
         buttons.append(nav)
 
+    # 🟣 если 2 дня — кнопка "оба"
+    if len(group["schedules"]) > 1:
+        buttons.append([
+            InlineKeyboardButton(
+                text="📝 Записаться на оба дня",
+                callback_data=f"book_all_{group['id']}"
+            )
+        ])
+
+    # обычная запись
     buttons.append([
         InlineKeyboardButton(
             text="📝 Выбрать день",
@@ -461,6 +484,27 @@ async def send_card(call, groups, index):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
+
+
+@dp.callback_query(F.data.startswith("book_all_"))
+async def book_all(call: CallbackQuery, state: FSMContext):
+    group_id = int(call.data.split("_")[2])
+
+    async with pool.acquire() as conn:
+        group = await conn.fetchrow(
+            "SELECT * FROM groups WHERE id=$1",
+            group_id
+        )
+
+    await state.update_data(
+        group_id=group_id,
+        group_name=group["name"],
+        selected_day="оба дня"
+    )
+
+    await call.message.answer("Введите ФИО:")
+    await state.set_state(BookingForm.fio)
+
 
 @dp.callback_query(F.data.startswith("choose_day_"))
 async def choose_day(call: CallbackQuery):
