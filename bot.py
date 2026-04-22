@@ -692,8 +692,11 @@ Username: @{username}
         await state.clear()
 
     except Exception as e:
-        print("ОШИБКА:", e)
-        await message.answer("❌ Ошибка при отправке заявки")
+        import traceback
+        print("ОШИБКА:", repr(e))
+        traceback.print_exc()
+
+        await message.answer(f"❌ Ошибка при отправке заявки:\n{e}")
 
 
 # --- ADMIN ---
