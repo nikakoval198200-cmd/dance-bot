@@ -776,7 +776,13 @@ async def no(call: CallbackQuery):
 @dp.callback_query(F.data == "review_good")
 async def review_good(call: CallbackQuery):
     await call.message.answer(
-        "💜 Спасибо за высокую оценку!\n\nОставьте отзыв 👇\nhttps://yandex.ru/profile/107007337379?intent=reviews"
+        "💜 Спасибо за высокую оценку!\n\nНам очень важна ваша обратная связь 🙏  
+Она помогает нам становиться лучше для вас
+
+Будем благодарны, если оставите отзыв по ссылке👇  
+https://yandex.ru/profile/107007337379?intent=reviews
+
+Это займет всего 1 минуту, но сильно поможет нашей команде 💫\nhttps://yandex.ru/profile/107007337379?intent=reviews"
     )
 
 @dp.callback_query(F.data == "review_bad")
