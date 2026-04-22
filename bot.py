@@ -629,23 +629,7 @@ async def navigate(call: CallbackQuery):
 
 
 # --- BOOKING ---
-@dp.callback_query(F.data.startswith("group_"))
-async def select_group(call: CallbackQuery, state: FSMContext):
-    group_id = int(call.data.split("_")[1])
 
-    async with pool.acquire() as conn:
-        group = await conn.fetchrow(
-            "SELECT * FROM groups WHERE id=$1",
-            group_id
-        )
-
-    await state.update_data(
-        group_id=group_id,
-        group_name=group["name"]
-    )
-
-    await call.message.answer("Введите ФИО:")
-    await state.set_state(BookingForm.fio)
 
 
 @dp.message(BookingForm.fio)
@@ -664,29 +648,28 @@ async def phone(message: Message, state: FSMContext):
 
 @dp.message(BookingForm.age)
 async def finish(message: Message, state: FSMContext):
-    data = await state.get_data()
-    selected_day = data.get("selected_day", "не указан")
-    group_name = data["group_name"]
+    try:
+        data = await state.get_data()
 
-    async with pool.acquire() as conn:
-        group = await conn.fetchrow(
-            "SELECT * FROM groups WHERE id=$1",
-            data["group_id"]
-        )
+        selected_day = data.get("selected_day", "не указан")
 
-    data.update({
-        "age": message.text,
-        "style": group["name"],
-        "user_id": message.from_user.id
-    })
+        async with pool.acquire() as conn:
+            group = await conn.fetchrow(
+                "SELECT * FROM groups WHERE id=$1",
+                data["group_id"]
+            )
 
-    bid = await add_booking(data)
-    username = message.from_user.username or "нет username"
+        data.update({
+            "age": message.text,
+            "style": group["name"],
+            "user_id": message.from_user.id
+        })
 
-    is_trial = data.get("is_trial")
-    trial_text = "🎁 ПРОБНОЕ ЗАНЯТИЕ\n\n" if is_trial else ""
+        bid = await add_booking(data)
 
-    text = f"""
+        username = message.from_user.username or "нет username"
+
+        text = f"""
 📌 ЗАЯВКА #{bid}
 
 ФИО: {data['fio']}
@@ -698,14 +681,19 @@ async def finish(message: Message, state: FSMContext):
 
 Username: @{username}
 """
-    await bot.send_message(
-        ADMIN_ID,
-        text,
-        reply_markup=admin_kb(bid)
-    )
 
-    await message.answer("Заявка отправлена 🙌")
-    await state.clear()
+        await bot.send_message(
+            ADMIN_ID,
+            text,
+            reply_markup=admin_kb(bid)
+        )
+
+        await message.answer("Заявка отправлена 🙌")
+        await state.clear()
+
+    except Exception as e:
+        print("ОШИБКА:", e)
+        await message.answer("❌ Ошибка при отправке заявки")
 
 
 # --- ADMIN ---
