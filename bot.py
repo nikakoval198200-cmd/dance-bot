@@ -67,7 +67,7 @@ async def send_review_request(user_id):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Отлично", callback_data="review_good"),
-            InlineKeyboardButton(text="Плохо", callback_data="review_bad")
+            InlineKeyboardButton(text="Не понравилось", callback_data="review_bad")
         ]
     ])
 
@@ -776,13 +776,13 @@ async def no(call: CallbackQuery):
 @dp.callback_query(F.data == "review_good")
 async def review_good(call: CallbackQuery):
     await call.message.answer(
-        "💜 Спасибо за высокую оценку!\n\nНам очень важна ваша обратная связь 🙏  
-Она помогает нам становиться лучше для вас
-
-Будем благодарны, если оставите отзыв по ссылке👇  
-https://yandex.ru/profile/107007337379?intent=reviews
-
-Это займет всего 1 минуту, но сильно поможет нашей команде 💫\nhttps://yandex.ru/profile/107007337379?intent=reviews"
+        "💜 Спасибо за высокую оценку!\n\n"
+        "Нам очень важна ваша обратная связь 🙏\n"
+        "Она помогает нам становиться лучше для вас\n\n"
+        "Будем благодарны, если оставите отзыв по ссылке👇\n"
+        "https://yandex.ru/profile/107007337379?intent=reviews\n\n"
+        "Это займет всего 1 минуту, но сильно поможет нашей команде 💫\n"
+        "По покупке абонемента напишите нашему руководителю: @alyonachoreo"
     )
 
 @dp.callback_query(F.data == "review_bad")
