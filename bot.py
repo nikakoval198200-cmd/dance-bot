@@ -103,6 +103,7 @@ async def init_db():
             age TEXT,
             style TEXT,
             group_id INT,
+            selected_day TEXT,
             status TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         );
@@ -137,8 +138,8 @@ async def add_booking(data):
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
         INSERT INTO bookings
-        (user_id, fio, phone, age, style, group_id, status)
-        VALUES ($1,$2,$3,$4,$5,$6,'pending')
+        (user_id, fio, phone, age, style, group_id, selected_day, status)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,'pending')
         RETURNING id
         """,
         data["user_id"],
@@ -146,8 +147,9 @@ async def add_booking(data):
         data["phone"],
         data["age"],
         data["style"],
-        data["group_id"])
-
+        data["group_id"],
+        data.get("selected_day")  # ✅ ВОТ ЭТО ДОБАВЬ
+        )
         return row["id"]
 
 
@@ -751,7 +753,7 @@ async def ok(call: CallbackQuery):
 ✅ <b>Вы записаны на занятие!</b>
 
 📌 Направление: {booking['style']}
-📅 Время: {group['schedule']}
+📅 Время: {booking['selected_day']}
 {address}
 
 ❗️Что взять с собой:
