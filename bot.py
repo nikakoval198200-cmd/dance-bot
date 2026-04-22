@@ -597,6 +597,10 @@ async def admin_stats(call: CallbackQuery):
 
     await call.message.answer(text, parse_mode="HTML")
 
+@dp.message(F.text == "/test_review")
+async def test_review(message: Message):
+    await send_review_request(message.from_user.id)
+
 # --- DIR ---
 @dp.callback_query(F.data.startswith("dir_"))
 async def show_groups(call: CallbackQuery):
